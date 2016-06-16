@@ -466,11 +466,11 @@ void rl_timer(unsigned int ticks, void *param)
 				}
 				LM_DBG("Deleting ratelimit pipe key \"%.*s\"\n",
 						key->len, key->s);
-				if (*pipe != iterator_delete(&del)) {
-					LM_ERR("error while deleting key\n");
-				}
+				value = iterator_delete(&del);
 				/* free resources */
-				shm_free(*pipe);
+				if (value)                              // <--- not issue at 484-485
+					shm_free(value);        // <--- not issue at 484-485
+				continue;
 			} else {
 				/* leave the lock if a cachedb query should be done*/
 				if (RL_USE_CDB(*pipe)) {
