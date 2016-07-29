@@ -1,6 +1,4 @@
 /*
- * $Id: address.c 5901 2009-07-21 07:45:05Z bogdan_iancu $
- *
  * check_address related functions
  *
  * Copyright (C) 2003 Juha Heinanen
@@ -19,9 +17,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -37,6 +35,7 @@
 #include "../../config.h"
 #include "../../db/db.h"
 #include "../../ip_addr.h"
+#include "../../socket_info.h"
 #include "../../mem/shm_mem.h"
 #include "../../parser/msg_parser.h"
 #include "../../parser/parse_from.h"
@@ -61,18 +60,13 @@ struct subnet *subnet_table_2;       /* Ptr to subnet table 2 */
 static db_con_t* db_handle = 0;
 static db_func_t perm_dbf;
 
-static int proto_char2int(str *proto) {
+static inline int proto_char2int(str *proto) {
+	int ret_proto;
 	if (proto->len==0 || (proto->len==3 && !strcasecmp(proto->s, "any")))
 		return PROTO_NONE;
-	if (proto->len==3 && !strcasecmp(proto->s, "udp"))
-		return PROTO_UDP;
-	if (proto->len==3 && !strcasecmp(proto->s, "tcp"))
-		return PROTO_TCP;
-	if (proto->len==3 && !strcasecmp(proto->s, "tls"))
-		return PROTO_TLS;
-	if (proto->len==4 && !strcasecmp(proto->s, "sctp"))
-		return PROTO_SCTP;
-	return -1;
+	if (parse_proto((unsigned char*)proto->s, proto->len, &ret_proto) < 0)
+		return -1;
+	return ret_proto;
 }
 
 /*
@@ -93,6 +87,7 @@ int reload_address_table(void)
 	struct net *subnet;
 	str str_pattern = {NULL,0}, str_info={NULL,0};
 	str str_src_ip, str_proto;
+	UNUSED(id);
 
 	cols[0] = &ip_col;
 	cols[1] = &grp_col;
@@ -263,10 +258,17 @@ int reload_address_table(void)
 			if (subnet_table_insert(new_subnet_table, group, subnet,
 				port, proto, &str_pattern, &str_info) == -1) {
 					LM_ERR("subnet table problem\n");
+					if (subnet) {
+						pkg_free(subnet);
+					}
 					goto error;
 				}
 			LM_DBG("Tuple <%.*s, %u, %u, %u> inserted into subnet table\n",
 					str_src_ip.len, str_src_ip.s, group, mask, port);
+			/* subnet in pkg; needs to be freed since was copied to shm */
+			if (subnet) {
+				pkg_free(subnet);
+			}
 		}
 	}
 
@@ -448,6 +450,9 @@ int check_addr_6(struct sip_msg* msg,
 			LM_ERR("cannot get str_ip string\n");
 			return -1;
 		}
+	} else {
+		LM_ERR("source ip not provided!\n");
+		return -1;
 	}
 	if (str_ip.len <= 0 || !str_ip.s) {
 		LM_ERR("source ip is not set!\n");
@@ -456,7 +461,7 @@ int check_addr_6(struct sip_msg* msg,
 
 	ip = str2ip(&str_ip);
 	if (!ip) {
-		LM_ERR("source ip is not set!\n");
+		LM_ERR("invalid ip set <%.*s>!\n", str_ip.len, str_ip.s);
 		return -1;
 	}
 
@@ -472,17 +477,7 @@ int check_addr_6(struct sip_msg* msg,
 		str_proto.len = strlen(str_proto.s);
 	}
 
-	if (!strncasecmp(str_proto.s, "UDP", str_proto.len))
-	    proto = PROTO_UDP;
-	else if (!strncasecmp(str_proto.s, "TCP", str_proto.len))
-	    proto = PROTO_TCP;
-    else if (!strncasecmp(str_proto.s, "TLS", str_proto.len))
-	    proto = PROTO_TLS;
-    else if (!strncasecmp(str_proto.s, "SCTP", str_proto.len))
-	    proto = PROTO_SCTP;
-	else if (!strncasecmp(str_proto.s, "ANY", str_proto.len))
-	    proto = PROTO_NONE;
-	else {
+	if ((proto = proto_char2int(&str_proto)) < 0) {
 		LM_ERR("unknown protocol %.*s\n", str_proto.len, str_proto.s);
 		return -1;
 	}
@@ -647,20 +642,21 @@ int get_source_group(struct sip_msg* msg, char *pvar) {
 	group = find_group_in_hash_table(*hash_table,
 				ip,
 				msg->rcv.src_port);
-
-	LM_DBG("Found <%d>\n", group);
-
 	if (group == -1) {
 
 		LM_DBG("Looking for <%x, %u> in subnet table\n",
 			msg->rcv.src_ip.u.addr32[0], msg->rcv.src_port);
 
 		group = find_group_in_subnet_table(*subnet_table,
-			ip,
-			msg->rcv.src_port);
-
-		LM_DBG("Found <%d>\n", group);
+				ip,
+				msg->rcv.src_port);
+		if (group == -1) {
+			LM_DBG("IP <%.*s:%u> not found in any group\n",
+					str_ip.len, str_ip.s, msg->rcv.src_port);
+			return -1;
+		}
 	}
+	LM_DBG("Found <%d>\n", group);
 
 	pvt.flags = PV_VAL_INT|PV_TYPE_INT;
 	pvt.rs.s = NULL;

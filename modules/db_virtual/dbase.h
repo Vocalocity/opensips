@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2009 Voice Sistem SRL
  * Copyright (C) 2009 Razvan
  *
@@ -18,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -102,15 +100,15 @@ typedef struct handle_con {
 
 typedef struct handle_set {
     /* index in the info_global list; used for the 1 to 1 relationship */
-    int             set_index;  
+    int             set_index;
 
     /* index in con_list; used for FAILOVER and ROUNDROBIN mode */
-    int             curent_con; 
+    int             curent_con;
     handle_con_t*   con_list;
     int             size;
 
     /* used for exactly once call of real init() and close() */
-    int             refcount;   
+    int             refcount;
 } handle_set_t;
 
 

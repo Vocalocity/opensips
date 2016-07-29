@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Perl module for OpenSIPS
  *
  * Copyright (C) 2006 Collax GmbH
@@ -20,7 +18,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  */
 
@@ -99,7 +97,7 @@ static cmd_export_t cmds[] = {
 	{ "perl_exec_simple", (cmd_function)perl_exec_simple2, 2,  NULL, 0,
 							     REQUEST_ROUTE | FAILURE_ROUTE
 							   | ONREPLY_ROUTE | BRANCH_ROUTE },
-	{ "perl_exec", (cmd_function)perl_exec1, 1,  NULL, 0, 
+	{ "perl_exec", (cmd_function)perl_exec1, 1,  NULL, 0,
 							     REQUEST_ROUTE | FAILURE_ROUTE
 							   | ONREPLY_ROUTE | BRANCH_ROUTE },
 	{ "perl_exec", (cmd_function)perl_exec2, 2, NULL, 0,
@@ -124,14 +122,21 @@ static param_export_t params[] = {
  * Exported MI functions
  */
 static mi_export_t mi_cmds[] = {
-	/* FIXME This does not yet work... 
+	/* FIXME This does not yet work...
 	{ "perl_reload",  perl_mi_reload, MI_NO_INPUT_FLAG,  0,  0  },*/
 	{ 0, 0, 0, 0, 0, 0}
 
 };
 
-
-
+static dep_export_t deps = {
+	{ /* OpenSIPS module dependencies */
+		{ MOD_TYPE_DEFAULT, "signaling", DEP_ABORT },
+		{ MOD_TYPE_NULL, NULL, 0 },
+	},
+	{ /* modparam dependencies */
+		{ NULL, NULL },
+	},
+};
 
 /*
  * Module info
@@ -151,10 +156,13 @@ static mi_export_t mi_cmds[] = {
  * Module interface
  */
 struct module_exports exports = {
-	"perl", 
+	"perl",
+	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	RTLD_NOW | RTLD_GLOBAL,
+	&deps,      /* OpenSIPS module dependencies */
 	cmds,       /* Exported functions */
+	0,          /* Exported async functions */
 	params,     /* Exported parameters */
 	0,          /* exported statistics */
 	mi_cmds,    /* exported MI functions */
@@ -211,7 +219,7 @@ PerlInterpreter *parser_init(void) {
 	perl_construct(new_perl);
 
 	argv[0] = ""; argc++; /* First param _needs_ to be empty */
-	
+
 	 /* Possible Include path extension by modparam */
 	if (modpath && (strlen(modpath) > 0)) {
 		modpathset = argc;

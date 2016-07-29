@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 #ifdef DIAM_ACC
 
@@ -49,7 +47,7 @@ typedef struct rd_buf
 
 #define MAX_AAA_MSG_SIZE  65536
 
-#define CONN_SUCCESS	 1 
+#define CONN_SUCCESS	 1
 #define CONN_ERROR		-1
 #define CONN_CLOSED		-2
 
@@ -60,10 +58,10 @@ int sockfd;
 int do_read( int socket, rd_buf_t *p);
 void reset_read_buffer(rd_buf_t *rb);
 
-/* it initializes the TCP connection */ 
+/* it initializes the TCP connection */
 int init_mytcp(char* host, int port);
 /* send a message over an already opened TCP connection */
-int tcp_send_recv(int sockfd, char* buf, int len, rd_buf_t* rb, 
+int tcp_send_recv(int sockfd, char* buf, int len, rd_buf_t* rb,
 					unsigned int waited_id);
 void close_tcp_connection(int sfd);
 

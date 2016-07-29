@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2013 OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
@@ -15,9 +13,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * -------
@@ -64,11 +62,11 @@ static int precedence(int op)
 	case MATHOP_ADD:
 	case MATHOP_SUB:
 		return 1;
-	
+
 	case MATHOP_MUL:
 	case MATHOP_DIV:
 		return 2;
-	
+
 	default:
 		return 3;
 	}
@@ -94,24 +92,49 @@ static int get_op(char symbol)
 	}
 }
 
-static void push_op(int type)
+static int push_op(int type)
 {
+  if(top >= MAX_STACK_SIZE) {
+		LM_ERR("RPN Stack Full\n");
+    return -1;
+  }
+
 	stack[top].type = type;
 	top++;
+  return 0;
 }
 
-static void push_number(int type, double value)
+static int push_number(double value)
 {
-	stack[top].type = type;
+  if(top >= MAX_STACK_SIZE) {
+		LM_ERR("RPN Stack Full\n");
+    return -1;
+  }
+
+	LM_DBG("push %f\n",value);
+	stack[top].type = MATHOP_NUMBER;
 	stack[top].value = value;
 	top++;
+  return 0;
 }
 
-static double pop_number(void)
+static int pop_number(double *value)
 {
+  if(top <= 0) {
+		LM_ERR("RPN Stack Empty\n");
+    return -1;
+  }
+
 	top--;
 
-	return stack[top].value;
+  if(stack[top].type != MATHOP_NUMBER) {
+    LM_ERR("RPN Stack Top is not a number\n");
+    return -1;
+  }
+
+	*value = stack[top].value;
+	LM_DBG("pop = %f\n",*value);
+  return 0;
 }
 
 static void pop_to_output(void)
@@ -128,29 +151,88 @@ static void pop_while_higher(int op_type)
 	}
 }
 
-static double pop_and_eval(int op_type)
+static int rpn_eval(const token* t)
 {
-	double o1, o2;
+  double o1, o2;
 
-	o2 = pop_number();
-	o1 = pop_number();
+  switch (t->type) {
+  case MATHOP_NUMBER:
+    return push_number(t->value);
 
-	switch (op_type) {
-	case MATHOP_ADD:
-		return o1 + o2;
-	
-	case MATHOP_SUB:
-		return o1 - o2;
-	
-	case MATHOP_MUL:
-		return o1 * o2;
-	
-	case MATHOP_DIV:
-		return o1 / o2;
-	
-	default:
-		return 0;
-	}
+  case MATHOP_ADD:
+    return pop_number(&o2) || pop_number(&o1) || push_number(o1 + o2);
+
+  case MATHOP_SUB:
+    return pop_number(&o2) || pop_number(&o1) || push_number(o1 - o2);
+
+  case MATHOP_MUL:
+    return pop_number(&o2) || pop_number(&o1) || push_number(o1 * o2);
+
+  case MATHOP_DIV:
+    return pop_number(&o2) || pop_number(&o1) || push_number(o1 / o2);
+
+  case MATHOP_NEG:
+    return pop_number(&o1) || push_number(-o1);
+
+  case MATHOP_DROP:
+    return pop_number(&o1);
+
+  case MATHOP_DUP:
+    if(pop_number(&o1)) return -1;
+    return push_number(o1) || push_number(o1);
+
+  case MATHOP_SWAP:
+    return pop_number(&o2) || pop_number(&o1) || push_number(o2) || push_number(o1);
+
+  case MATHOP_MOD:
+    return pop_number(&o2) || pop_number(&o1) || push_number(fmod(o1,o2));
+
+  case MATHOP_POW:
+    return pop_number(&o2) || pop_number(&o1) || push_number(pow(o1,o2));
+
+  case MATHOP_EXP:
+    return pop_number(&o1) || push_number(exp(o1));
+
+  case MATHOP_LOG10:
+    return pop_number(&o1) || push_number(log10(o1));
+
+  case MATHOP_LN:
+    return pop_number(&o1) || push_number(log(o1));
+
+  case MATHOP_ABS:
+    return pop_number(&o1) || push_number(fabs(o1));
+
+  case MATHOP_SQRT:
+    return pop_number(&o1) || push_number(sqrt(o1));
+
+  case MATHOP_CBRT:
+    return pop_number(&o1) || push_number(cbrt(o1));
+
+  case MATHOP_FLOOR:
+    return pop_number(&o1) || push_number(floor(o1));
+
+  case MATHOP_CEIL:
+    return pop_number(&o1) || push_number(ceil(o1));
+
+  case MATHOP_ROUND:
+    return pop_number(&o1) || push_number(round(o1));
+
+  case MATHOP_NEARBYINT:
+    return pop_number(&o1) || push_number(nearbyint(o1));
+
+  case MATHOP_TRUNC:
+    return pop_number(&o1) || push_number(trunc(o1));
+
+  case MATHOP_E:
+    return push_number(M_E);
+
+  case MATHOP_PI:
+    return push_number(M_PI);
+
+  default:
+    LM_WARN("Invalid RPN token type\n");
+    return -1;
+  }
 }
 
 #define inc_and_trim(s)   \
@@ -159,6 +241,79 @@ static double pop_and_eval(int op_type)
 		s.len--;          \
 		trim_leading(&s); \
 	} while (0)
+
+static inline void parse_word(str* _s, str* word)
+{
+  trim_leading(_s);
+  word->len = 0;
+  word->s = _s->s;
+  for(; _s->len > 0; _s->len--, _s->s++) {
+    switch(*(_s->s)) {
+      case ' ':
+      case '\t':
+      case '\r':
+      case '\n':
+        return;
+
+      default:
+        word->len++;
+        break;
+    }
+  }
+}
+
+struct mathop_entry {
+  str s;
+  int op;
+};
+
+const struct mathop_entry word_to_mathop[] = {
+  {s:{ len:1, s:"+" }, op:MATHOP_ADD},
+  {s:{ len:1, s:"-" }, op:MATHOP_SUB},
+  {s:{ len:1, s:"*" }, op:MATHOP_MUL},
+  {s:{ len:1, s:"/" }, op:MATHOP_DIV},
+  {s:{ len:4, s:"drop" }, op:MATHOP_DROP},
+  {s:{ len:3, s:"dup" }, op:MATHOP_DUP},
+  {s:{ len:4, s:"swap" }, op:MATHOP_SWAP},
+  {s:{ len:3, s:"mod" }, op:MATHOP_MOD},
+  {s:{ len:3, s:"pow" }, op:MATHOP_POW},
+  {s:{ len:3, s:"exp" }, op:MATHOP_EXP},
+  {s:{ len:2, s:"ln" }, op:MATHOP_LN},
+  {s:{ len:3, s:"log10" }, op:MATHOP_LOG10},
+  {s:{ len:3, s:"abs" }, op:MATHOP_ABS},
+  {s:{ len:3, s:"neg" }, op:MATHOP_NEG},
+  {s:{ len:4, s:"sqrt" }, op:MATHOP_SQRT},
+  {s:{ len:4, s:"cbrt" }, op:MATHOP_CBRT},
+  {s:{ len:5, s:"floor" }, op:MATHOP_FLOOR},
+  {s:{ len:4, s:"ceil" }, op:MATHOP_CEIL},
+  {s:{ len:5, s:"round" }, op:MATHOP_ROUND},
+  {s:{ len:9, s:"nearbyint" }, op:MATHOP_NEARBYINT},
+  {s:{ len:5, s:"trunc" }, op:MATHOP_TRUNC},
+  {s:{ len:1, s:"e" }, op:MATHOP_E},
+  {s:{ len:2, s:"pi" }, op:MATHOP_PI},
+  {s:{ len:0, s:NULL}, op:-1}
+};
+
+static int get_rpn_op(str *_s)
+{
+  str word;
+  const struct mathop_entry* j;
+
+  trim_leading(_s);
+  parse_word(_s,&word);
+  if(word.len == 0) {
+    return -1;
+  }
+
+  for( j = word_to_mathop; j->s.len > 0; j++ ) {
+    if(j->s.len == word.len && !strncmp(j->s.s,word.s,j->s.len)) {
+      return j->op;
+    }
+  }
+
+  LM_WARN("Parse expr error: Invalid operator! <%.*s>\n", word.len, word.s);
+  return -1;
+}
 
 /**
  * Shunting-yard algorithm
@@ -179,7 +334,7 @@ static int convert_to_rpn(str *exp)
 
 	while (s.len) {
 
-		if (*s.s > '0' && *s.s < '9') {
+		if (*s.s >= '0' && *s.s <= '9') {
 			errno = 0;
 			d = strtod(s.s, &p);
 
@@ -207,17 +362,17 @@ static int convert_to_rpn(str *exp)
 			break;
 
 		case MATHOP_R_PAREN:
-			
+
 			while (top > 0 && stack[top-1].type != MATHOP_LPAREN) {
 				pop_to_output();
 			}
 
 			if (top == 0) {
-				LM_ERR("Parse expr error: mismatched parantheses!\n");
+				LM_ERR("Parse expr error: mismatched parenthesis!\n");
 				return -1;
 			}
 
-			/* just pop the left paranthesis off the stack */
+			/* just pop the left parenthesis off the stack */
 			top--;
 
 			inc_and_trim(s);
@@ -245,6 +400,49 @@ static int convert_to_rpn(str *exp)
 	return 0;
 }
 
+static int parse_rpn(str *exp)
+{
+  double d;
+  char *p;
+  int op;
+  str s;
+
+  p = exp->s;
+  s.s = exp->s;
+  s.len = exp->len;
+
+  while (s.len) {
+
+    if (*s.s >= '0' && *s.s <= '9') {
+      errno = 0;
+      d = strtod(s.s, &p);
+
+      s.len -= p - s.s;
+      s.s = p;
+
+      if (errno == ERANGE) {
+        LM_WARN("Overflow in parsing a numeric value!\n");
+        return -1;
+      }
+
+      output[pos].type = MATHOP_NUMBER;
+      output[pos].value = d;
+      pos++;
+    } else {
+      op = get_rpn_op(&s);
+      if (op < 0) {
+        return -1;
+      }
+
+      output[pos].type = op;
+      pos++;
+    }
+    trim_leading(&s);
+  }
+
+  return 0;
+}
+
 /**
  * The function assumes that the 'output' buffer is properly written and
  * the 'pos' variable holds the size of the buffer
@@ -252,37 +450,26 @@ static int convert_to_rpn(str *exp)
 static int evaluate_rpn_output(double *result)
 {
 	int i;
-	double val;
 
-	/* since all supported operators are binary, just hardcode the 2 */
 	for (i = 0; i < pos; i++) {
-		
-		if (output[i].type == MATHOP_NUMBER) {
-			push_number(MATHOP_NUMBER, output[i].value);
-		} else if (top >= 2) {
-			val = pop_and_eval(output[i].type);
-			push_number(MATHOP_NUMBER, val);
-
-		} else {
-			LM_ERR("Parse expr error: insufficient operands!\n");
-			return -1;
+		if(rpn_eval(output+i) < 0) {
+        return -1;
 		}
 	}
 
-	if (top > 1) {
-		LM_ERR("Parse expr error: insufficient operators/closing parantheses!\n");
+	if (top != 1) {
+		LM_ERR("Parse expr error: stack has %d elements\n",top);
 		return -1;
 	}
 
-	*result = stack[top-1].value;
-	return 0;
+	return pop_number(result);
 }
 
 
 /**
  * Computes the result of a given expression
  */
-int evaluate_exp(struct sip_msg *msg, str *exp, pv_spec_p result_var)
+int evaluate_exp(struct sip_msg *msg, str *exp, pv_spec_p result_var, short is_rpn)
 {
 	double result;
 	pv_value_t pv_val;
@@ -293,9 +480,16 @@ int evaluate_exp(struct sip_msg *msg, str *exp, pv_spec_p result_var)
 	top = 0;
 	pos = 0;
 
-	if (convert_to_rpn(exp) != 0) {
-		LM_ERR("Failed to convert expression to RPN form!\n");
-		return -1;
+	if(is_rpn) {
+		if (parse_rpn(exp) != 0) {
+			LM_ERR("Failed to parse RPN!\n");
+			return -1;
+		}
+	} else {
+		if (convert_to_rpn(exp) != 0) {
+			LM_ERR("Failed to convert expression to RPN form!\n");
+			return -1;
+		}
 	}
 
 	if (evaluate_rpn_output(&result) != 0) {
@@ -304,11 +498,11 @@ int evaluate_exp(struct sip_msg *msg, str *exp, pv_spec_p result_var)
 	}
 
 	sprintf(print_buffer, "%.*lf", decimal_digits, result);
-	
+
 	pv_val.flags = PV_VAL_STR;
 	pv_val.rs.s = print_buffer;
 	pv_val.rs.len = strlen(print_buffer);
-	
+
 	if (pv_set_value(msg, result_var, 0, &pv_val) != 0)
 	{
 		LM_ERR("SET output value failed.\n");
@@ -368,7 +562,7 @@ int round_dp_op(struct sip_msg *msg, str *n, pv_spec_p result_var, int digits)
 		pv_val.ri = (int)round(d);
 	} else {
 		sprintf(print_buffer, "%.*lf", digits, d);
-	
+
 		pv_val.flags = PV_VAL_STR;
 		pv_val.rs.s = print_buffer;
 		pv_val.rs.len = strlen(print_buffer);
@@ -397,7 +591,7 @@ int round_sf_op(struct sip_msg *msg, str *n, pv_spec_p result_var, int digits)
 	d = round(d * factor) / factor;
 
 	sprintf(print_buffer, "%.*f", decimal_digits, d);
-	
+
 	pv_val.flags = PV_VAL_STR;
 	pv_val.rs.s = print_buffer;
 	pv_val.rs.len = strlen(print_buffer);

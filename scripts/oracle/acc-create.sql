@@ -23,7 +23,7 @@ BEGIN map2users('acc'); END;
 /
 CREATE INDEX acc_callid_idx  ON acc (callid);
 
-INSERT INTO version (table_name, table_version) values ('missed_calls','4');
+INSERT INTO version (table_name, table_version) values ('missed_calls','5');
 CREATE TABLE missed_calls (
     id NUMBER(10) PRIMARY KEY,
     method VARCHAR2(16) DEFAULT '',
@@ -32,7 +32,9 @@ CREATE TABLE missed_calls (
     callid VARCHAR2(64) DEFAULT '',
     sip_code VARCHAR2(3) DEFAULT '',
     sip_reason VARCHAR2(32) DEFAULT '',
-    time DATE
+    time DATE,
+    setuptime NUMBER(10) DEFAULT 0 NOT NULL,
+    created DATE DEFAULT NULL
 );
 
 CREATE OR REPLACE TRIGGER missed_calls_tr

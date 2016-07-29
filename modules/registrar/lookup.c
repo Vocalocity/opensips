@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Lookup contacts in usrloc
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * ---------
@@ -28,8 +26,8 @@
 /*!
  * \file
  * \brief SIP registrar module - lookup contacts in usrloc
- * \ingroup registrar  
- */  
+ * \ingroup registrar
+ */
 
 
 #include <string.h>
@@ -46,13 +44,22 @@
 #include "reg_mod.h"
 #include "lookup.h"
 
-
 #define GR_E_PART_SIZE	22
 #define GR_A_PART_SIZE	14
 
 #define allowed_method(_msg, _c, _f) \
 	( !((_f)&REG_LOOKUP_METHODFILTER_FLAG) || \
 		((_msg)->REQ_METHOD)&((_c)->methods) )
+
+#define ua_re_check(return) \
+	if (flags & REG_LOOKUP_UAFILTER_FLAG) { \
+		tmp = *(ptr->user_agent.s+ptr->user_agent.len); \
+		*(ptr->user_agent.s+ptr->user_agent.len) = '\0'; \
+		if (regexec(&ua_re, ptr->user_agent.s, 1, &ua_match, 0)) { \
+			return; \
+		} \
+		*(ptr->user_agent.s+ptr->user_agent.len) = tmp; \
+	}
 
 /*! \brief
  * Lookup contact in the database and rewrite Request-URI
@@ -70,6 +77,13 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 	int ret;
 	str path_dst;
 	str flags_s;
+	char* ua = NULL;
+	char* re_end = NULL;
+	int re_len = 0;
+	char tmp;
+	regex_t ua_re;
+	int regexp_flags = 0;
+	regmatch_t ua_match;
 	pv_value_t val;
 	int_str istr;
 	str sip_instance = {0,0},call_id = {0,0};
@@ -84,7 +98,30 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 			switch (flags_s.s[res]) {
 				case 'm': flags |= REG_LOOKUP_METHODFILTER_FLAG; break;
 				case 'b': flags |= REG_LOOKUP_NOBRANCH_FLAG; break;
-				default: LM_WARN("unsuported flag %c \n",flags_s.s[res]);
+				case 'u':
+					if (flags_s.s[res+1] != '/') {
+						LM_ERR("no regexp after 'u' flag");
+						break;
+					}
+					res++;
+					if ((re_end = strrchr(flags_s.s+res+1, '/')) == NULL) {
+						LM_ERR("no regexp after 'u' flag");
+						break;
+					}
+					res++;
+					re_len = re_end-flags_s.s-res;
+					if (re_len == 0) {
+						LM_ERR("empty regexp");
+						break;
+					}
+					ua = flags_s.s+res;
+					flags |= REG_LOOKUP_UAFILTER_FLAG;
+					LM_DBG("found regexp /%.*s/", re_len, ua);
+					res += re_len;
+					break;
+				case 'i': regexp_flags |= REG_ICASE; break;
+				case 'e': regexp_flags |= REG_EXTENDED; break;
+				default: LM_WARN("unsupported flag %c \n",flags_s.s[res]);
 			}
 		}
 	}
@@ -119,6 +156,17 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 		return -1;
 	}
 
+	if (flags & REG_LOOKUP_UAFILTER_FLAG) {
+		tmp = *(ua+re_len);
+		*(ua+re_len) = '\0';
+		if (regcomp(&ua_re, ua, regexp_flags) != 0) {
+			LM_ERR("bad regexp '%s'\n", ua);
+			*(ua+re_len) = tmp;
+			return -1;
+		}
+		*(ua+re_len) = tmp;
+	}
+
 	ptr = r->contacts;
 	ret = -1;
 	/* look first for an un-expired and suported contact */
@@ -132,10 +180,16 @@ search_valid_contact:
 		goto done;
 	}
 
+	ua_re_check(
+		ret = -1;
+		ptr = ptr->next;
+		goto search_valid_contact
+	);
+
 	if (sip_instance.len && sip_instance.s) {
 		LM_DBG("ruri has gruu in lookup\n");
 		/* uri has GRUU */
-		if (ptr->instance.len-2 != sip_instance.len || 
+		if (ptr->instance.len-2 != sip_instance.len ||
 				memcmp(ptr->instance.s+1,sip_instance.s,sip_instance.len)) {
 			LM_DBG("no match to sip instace - [%.*s] - [%.*s]\n",ptr->instance.len-2,ptr->instance.s+1,
 					sip_instance.len,sip_instance.s);
@@ -165,7 +219,7 @@ search_valid_contact:
 		it = ptr->next;
 		while ( it ) {
 			if (VALID_CONTACT(it,act_time)) {
-				if (it->instance.len-2 == sip_instance.len &&
+				if (it->instance.len-2 == sip_instance.len && sip_instance.s &&
 						memcmp(it->instance.s+1,sip_instance.s,sip_instance.len) == 0)
 					if (it->last_modified > ptr->last_modified) {
 						/* same instance id, but newer modified -> expired GRUU, no match at all */
@@ -218,9 +272,9 @@ search_valid_contact:
 			}
 		}
 
-		set_ruri_q(ptr->q);
+		set_ruri_q( _m, ptr->q);
 
-		setbflag( 0, ptr->cflags);
+		setbflag( _m, 0, ptr->cflags);
 
 		if (ptr->sock)
 			_m->force_send_socket = ptr->sock;
@@ -245,13 +299,15 @@ search_valid_contact:
 	for( ; ptr ; ptr = ptr->next ) {
 		if (VALID_CONTACT(ptr, act_time) && allowed_method(_m,ptr,flags)) {
 			path_dst.len = 0;
-			if(ptr->path.s && ptr->path.len 
+			if(ptr->path.s && ptr->path.len
 			&& get_path_dst_uri(&ptr->path, &path_dst) < 0) {
 				LM_ERR("failed to get dst_uri for Path\n");
 				continue;
 			}
 
-			/* The same as for the first contact applies for branches 
+			ua_re_check(continue);
+
+			/* The same as for the first contact applies for branches
 			 * regarding path vs. received. */
 			LM_DBG("setting branch <%.*s>\n",ptr->c.len,ptr->c.s);
 			if (append_branch(_m,&ptr->c,path_dst.len?&path_dst:&ptr->received,
@@ -272,8 +328,11 @@ search_valid_contact:
 	}
 
 done:
-	ul.release_urecord(r);
+	ul.release_urecord(r, 0);
 	ul.unlock_udomain((udomain_t*)_t, &aor);
+	if (flags & REG_LOOKUP_UAFILTER_FLAG) {
+		regfree(&ua_re);
+	}
 	return ret;
 }
 
@@ -291,6 +350,7 @@ int registered(struct sip_msg* _m, char* _t, char* _s, char *_c)
 	pv_value_t val;
 	str callid;
 	int res;
+	int_str istr;
 
 	/* get the AOR */
 	if (_s) {
@@ -351,6 +411,15 @@ int registered(struct sip_msg* _m, char* _t, char* _s, char *_c)
 		for( ; ptr ; ptr=ptr->next ) {
 			if (callid.len==0 || (callid.len==ptr->callid.len &&
 			memcmp(callid.s,ptr->callid.s,callid.len)==0 ) ) {
+
+				/* also populate the 'attributes' avp */
+				if (attr_avp_name != -1) {
+				    istr.s = ptr->attr;
+
+				    if (add_avp_last(AVP_VAL_STR, attr_avp_name, istr) != 0)
+				        LM_ERR("Failed to populate attr avp!\n");
+				}
+
 				ul.unlock_udomain((udomain_t*)_t, &aor);
 				LM_DBG("'%.*s' found in usrloc\n", aor.len, ZSW(aor.s));
 				return 1;

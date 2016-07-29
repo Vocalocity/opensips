@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2007 1&1 Internet AG
  * Copyright (C) 2007 BASIS AudioNet GmbH
  *
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -38,7 +36,7 @@
  * or command line tools.
  * Furthermore it provides some functions to let the server wait a
  * specific time interval.
- * 
+ *
  */
 
 
@@ -172,7 +170,7 @@ static cmd_export_t cmds[]={
 	{0, 0, 0, 0, 0, 0}
 };
 
-static param_export_t params[]={ 
+static param_export_t params[]={
 	{"initial_probability", INT_PARAM, &initial},
 	{"hash_file",           STR_PARAM, &hash_file        },
 	{"shvset",              STR_PARAM|USE_FUNC_PARAM, (void*)param_set_shvar },
@@ -207,9 +205,12 @@ static pv_export_t mod_items[] = {
 
 struct module_exports exports = {
 	"cfgutils",
+	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,  /* module version */
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	NULL,            /* OpenSIPS module dependencies */
 	cmds,        /* exported functions */
+	0,           /* exported async functions */
 	params,      /* exported parameters */
 	0,           /* exported statistics */
 	mi_cmds,     /* exported MI functions */
@@ -225,7 +226,7 @@ struct module_exports exports = {
 /**************************** fixup functions ******************************/
 static int fixup_prob( void** param, int param_no)
 {
-	unsigned int myint;
+	unsigned int myint = 0;
 	str param_str;
 
 	/* we only fix the parameter #1 */
@@ -303,7 +304,7 @@ static struct mi_root* mi_get_prob(struct mi_root* cmd, void* param )
 	node = addf_mi_node_child( &rpl_tree->node, 0, 0, 0, "actual probability: %u percent\n",(*probability));
 	if(node == NULL)
 		goto error;
-	
+
 	return rpl_tree;
 
 error:
@@ -349,7 +350,7 @@ static struct mi_root* mi_check_hash(struct mi_root* cmd, void* param )
 			LM_ERR("could not hash the config file");
 			rpl_tree = init_mi_tree( 500, MI_INTERNAL_ERR_S, MI_INTERNAL_ERR_LEN );
 		}
-		
+
 		if (strncmp(config_hash, tmp, MD5_LEN) == 0) {
 			rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN );
 			if(rpl_tree == NULL)
@@ -364,7 +365,7 @@ static struct mi_root* mi_check_hash(struct mi_root* cmd, void* param )
 		if(node == NULL)
 			goto error;
 	}
-	
+
 	return rpl_tree;
 
 error:
@@ -372,12 +373,12 @@ error:
 	return 0;
 }
 
-static int set_prob(struct sip_msg *bar, char *percent_par, char *foo) 
+static int set_prob(struct sip_msg *bar, char *percent_par, char *foo)
 {
 	*probability=(int)(long)percent_par;
 	return 1;
 }
-	
+
 static int reset_prob(struct sip_msg *bar, char *percent_par, char *foo)
 {
 	*probability=initial;
@@ -633,7 +634,7 @@ static int pv_set_count(struct sip_msg* msg, char* pv_name, char* pv_result)
 
 	pv_val.flags = PV_TYPE_INT;
 	pv_val.ri = pv_elem->spec.pvp.pvi.u.ival-1;
-	
+
 	if (pv_set_value( msg, &pv_res->spec, 0, &pv_val) != 0)
 	{
 		LM_ERR("SET output value failed.\n");

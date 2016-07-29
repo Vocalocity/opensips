@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 
@@ -30,8 +28,8 @@
 
 
 /* forwards the msg to the given location set; if flags has set the
- * CPL_PROXY_DONE, all locations will be added as branches, otherwise, the 
- * first one will set as RURI (this is ha case when this is the first proxy 
+ * CPL_PROXY_DONE, all locations will be added as branches, otherwise, the
+ * first one will set as RURI (this is ha case when this is the first proxy
  * of the message)
  * The given list of location will be freed, returning 0 instead.
  * Returns:  0 - OK
@@ -66,7 +64,7 @@ int cpl_proxy_to_loc_set( struct sip_msg *msg, struct location **locs,
 	}
 	/* is the location NATED? */
 	bflags = ((*locs)->flags&CPL_LOC_NATED) ? cpl_fct.ulb.nat_flag : 0 ;
-	setb0flags(bflags);
+	setb0flags(msg,bflags);
 	/* free the location and point to the next one */
 	foo = (*locs)->next;
 	free_location( *locs );

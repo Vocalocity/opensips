@@ -1,5 +1,4 @@
 /*
- *
  * Copyright (c) 2007, 2008, 2009
  * 	     Eric Gouyer <folays@folays.net>
  * Copyright (c) 2007, 2008, 2009, 2010, 2011
@@ -145,7 +144,7 @@ static int sipmemcache_atomic_opts(lua_State *L, u_int32_t (*f)(struct memcache 
   const char *key;
   size_t keylen;
   int nb;
-  
+
   o = luaL_checkudata(L, 1, "siplua.memcache");
   key = luaL_checklstring(L, 2, &keylen);
   nb = luaL_checkinteger(L, 3);
@@ -177,7 +176,7 @@ static int l_sipmemcache_delete(lua_State *L)
   const char *key;
   size_t keylen;
   int ret;
-  
+
   o = luaL_checkudata(L, 1, "siplua.memcache");
   key = luaL_checklstring(L, 2, &keylen);
   if (o->finalized || !o->mc)
@@ -200,7 +199,7 @@ static int l_sipmemcache_get(lua_State *L)
   size_t keylen;
   void *blah;
   size_t retlen;
-  
+
   o = luaL_checkudata(L, 1, "siplua.memcache");
   key = luaL_checklstring(L, 2, &keylen);
   if (o->finalized || !o->mc)

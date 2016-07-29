@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 #ifndef _CPL_RUN_H
@@ -62,7 +60,7 @@ struct cpl_interpreter {
 	struct location *loc_set;     /* location set */
 	/* pointers to the string-headers needed for switches; can point directly
 	 * into the sip_msg structure (if no proxy took places) or to private
-	 * buffers into shm_memory (after a proxy happend); if a hdr is copy into a
+	 * buffers into shm_memory (after a proxy happened); if a hdr is copy into a
 	 * private buffer, a corresponding flag will be set (xxxx_DUPLICATED) */
 	str *ruri;
 	str *to;

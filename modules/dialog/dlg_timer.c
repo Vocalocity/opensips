@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2006 Voice System SRL
  *
  * This file is part of opensips, a free SIP server.
@@ -15,9 +13,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -255,7 +253,7 @@ int insert_ping_timer(struct dlg_cell* dlg)
 		LM_ERR("no more shm mem\n");
 		return -1;
 	}
-	
+
 	node->dlg = dlg;
 	node->next = 0;
 	node->prev = 0;
@@ -315,7 +313,7 @@ int remove_dlg_timer(struct dlg_tl *tl)
 		return 1;
 	}
 
-	if (tl->prev==NULL || tl->next==NULL) {
+	if (tl->prev==NULL || tl->next==NULL || tl->next == FAKE_DIALOG_TL) {
 		LM_CRIT("bogus tl=%p tl->prev=%p tl->next=%p\n",
 			tl, tl->prev, tl->next);
 		lock_release( d_timer->lock);
@@ -323,7 +321,8 @@ int remove_dlg_timer(struct dlg_tl *tl)
 	}
 
 	remove_dlg_timer_unsafe(tl);
-	tl->next = NULL;
+	/* mark that this dialog was one a part of the timer list */
+	tl->next = FAKE_DIALOG_TL;
 	tl->prev = NULL;
 	tl->timeout = 0;
 
@@ -351,7 +350,7 @@ static inline void detach_node_unsafe(struct dlg_ping_list *it)
 }
 
 /* returns:
- * 0 if removed succesfully
+ * 0 if removed successfully
  * 1 if dlg not found in list
  */
 int remove_ping_timer(struct dlg_cell *dlg)
@@ -375,7 +374,15 @@ int remove_ping_timer(struct dlg_cell *dlg)
     -1 - failure (dialog is expired, so it cannot be added again) */
 int update_dlg_timer( struct dlg_tl *tl, int timeout )
 {
+	int ret;
+
 	lock_get( d_timer->lock);
+
+	if ( tl->next == FAKE_DIALOG_TL ) {
+		/* previously removed from timer list - we will not add it again */
+		lock_release( d_timer->lock);
+		return 0;
+	}
 
 	if ( tl->next ) {
 		if (tl->prev==0) {
@@ -383,13 +390,16 @@ int update_dlg_timer( struct dlg_tl *tl, int timeout )
 			return -1;
 		}
 		remove_dlg_timer_unsafe(tl);
+		ret = 0;
+	} else {
+		ret = 1;
 	}
 
 	tl->timeout = get_ticks()+timeout;
 	insert_dlg_timer_unsafe( tl );
 
 	lock_release( d_timer->lock);
-	return 0;
+	return ret;
 }
 
 static inline struct dlg_tl* get_expired_dlgs(unsigned int time)
@@ -549,7 +559,7 @@ void reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
 			LM_ERR("Null callback parameter\n");
 			return;
 	}
-	
+
 	rpl = ps->rpl;
 	statuscode = ps->code;
 	dlg = *(ps->param);
@@ -557,7 +567,7 @@ void reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
 	LM_DBG("Status Code received =  [%d]\n", statuscode);
 
 	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occured, nothing else to do now
+		/* timeout occurred, nothing else to do now
 		 * next time timer fires, it will detect ping reply was not received
 		 */
 		LM_INFO("terminating dialog ( due to timeout ) "
@@ -567,7 +577,7 @@ void reply_from_caller(struct cell* t, int type, struct tmcb_params* ps)
 
 	if (statuscode == 481)
 	{
-		/* call/transaction does not exist 
+		/* call/transaction does not exist
 		 * terminate the dialog */
 		LM_INFO("terminating dialog ( due to 481 ) "
 				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
@@ -596,7 +606,7 @@ void reply_from_callee(struct cell* t, int type, struct tmcb_params* ps)
 			LM_ERR("Null callback parameter\n");
 			return;
 	}
-	
+
 	rpl = ps->rpl;
 	statuscode = ps->code;
 	dlg = *(ps->param);
@@ -604,7 +614,7 @@ void reply_from_callee(struct cell* t, int type, struct tmcb_params* ps)
 	LM_DBG("Status Code received =  [%d]\n", statuscode);
 
 	if (rpl == FAKED_REPLY || statuscode == 408) {
-		/* timeout occured, nothing else to do now
+		/* timeout occurred, nothing else to do now
 		 * next time timer fires, it will detect ping reply was not received
 		 */
 		LM_INFO("terminating dialog ( due to timeout ) "
@@ -614,7 +624,7 @@ void reply_from_callee(struct cell* t, int type, struct tmcb_params* ps)
 
 	if (statuscode == 481)
 	{
-		/* call/transaction does not exist 
+		/* call/transaction does not exist
 		 * terminate the dialog */
 		LM_INFO("terminating dialog ( due to 481 ) "
 				"with callid = [%.*s] \n",dlg->callid.len,dlg->callid.s);
@@ -626,9 +636,7 @@ void reply_from_callee(struct cell* t, int type, struct tmcb_params* ps)
 
 void unref_dlg_cb(void *dlg)
 {
-	if (!d_table)
-		return;
-	unref_dlg((struct dlg_cell*)dlg,1);
+	unref_dlg_destroy_safe((struct dlg_cell*)dlg,1);
 }
 
 void dlg_ping_routine(unsigned int ticks , void * attr)
@@ -660,16 +668,14 @@ void dlg_ping_routine(unsigned int ticks , void * attr)
 		dlg = it->dlg;
 		LM_DBG("dialog %p-%.*s has terminated\n",dlg,dlg->callid.len,dlg->callid.s);
 		curr = it->next;
-		/* if marked as to be deleted, we let it go 
+		/* if marked as to be deleted, we let it go
 		 * for the ping timer list as well */
 		unref_dlg(dlg,1);
 		shm_free(it);
 		it = curr;
 	}
 
-#ifdef USE_TCP
-		tcp_no_new_conn = 1;
-#endif
+	tcp_no_new_conn = 1;
 
 	/* ping_timer->first now contains all active dialogs */
 	it = ping_timer->first;
@@ -701,8 +707,5 @@ void dlg_ping_routine(unsigned int ticks , void * attr)
 		it = it->next;
 	}
 
-#ifdef USE_TCP
-		tcp_no_new_conn = 0;
-#endif
-
+	tcp_no_new_conn = 0;
 }

@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  *
  * history:
@@ -70,6 +70,8 @@ int xmlrpc_build_buffer(str *,
 
 #define XMLRPC_METHOD_CALL	"methodCall"
 #define XMLRPC_METHOD_NAME	"methodName"
+#define XMLRPC_STRUCT		"struct"
+#define XMLRPC_MEMBER		"member"
 #define XMLRPC_PARAMS		"params"
 #define XMLRPC_PARAM		"param"
 #define XMLRPC_ATTR			"name"

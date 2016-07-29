@@ -2,14 +2,14 @@
 #   OpenSIPS  #
 #=============#
 
-Current OpenSIPS team in alphabetical order as of 29 January 2013:
+Current OpenSIPS team in alphabetical order as of 18 March 2015:
 
 Core Team:
 
 Bogdan Andrei Iancu
-Dan Pascu
-Razvan Crainea
+Ionut-Razvan Ionita
 Liviu Chircu
+Razvan Crainea
 Vladut-Stefan Paiu
 
 
@@ -18,6 +18,7 @@ Module Maintainers:
 Alexandr Dubovikov
 Anca Vamanu
 Arnaud Chong
+Dan Pascu
 Di-Shi Sun
 Iñaki Baz Castillo
 Marc Leurent
@@ -26,37 +27,48 @@ Saúl Ibarra Corretgé
 Dynamic Packet
 
 
-============== Release 1.9.0 =================
-Arnaud Chong
-Boris Ratner
+============== Release 2.1.0 =================
+Andrei Datcu
+Alexander Mustafin
+Antonis Psaras
+Bill Hau
+Bobby Hakimi
 Brett Nemeroff
-Christophe Sollet
+buchtajz (GitHub)
+Carlos Oliva
+Chris Maciejewski
+cityant
 Damien Sandras
-David Sanders
-Diego Barberio
-Dragos Oancea
-Duane Larson
-Gomtesh Jain
-James Gledhill
+eldonogithub
+Eric Tamme
+Evandro Villaron
+Ezequiel Lovelle
+Fabrizio Picconi
+Gary Nyquist
+gergelypeli (GitHub)
+Giuseppe Cardone
+hydrosine (GitHub)
+jalung (GitHub)
+jamesabravo (GitHub)
+Jamuel Starkey
+jbonicioli (GitHub)
+John Nash
 John Quick
-Lirakis
-Marcel Barbulescu
-Michael Schloh von Bennewitz
-Muhammad Shahzad
-Nathaniel L Keeling III
+Justin Zondagh
+Mayama Takeshi
+Mihai Tiganus
+miko95 (GitHub)
 Nick Altmann
-Parantido Julius De Rica
+Norman Brandinger
+Ovidiu Sas
+Parantido De Rica
+Peter Kelly
 Peter Lemenkov
-Rick van Rein
-Rudy from DynamicPacket
-Ryan Bullock
-Samuel Muller
-Sergey Avseyev
-Stefan Tobe
-Trevor Francis
+Robison Tesini
+SamyGo
+Satish Patel
+sekil (IRC)
+Sergey Khripchenko
+Stas Kobzar
 Walter Doekes
-Yaroslav M Strilchuk
-Nick (SourceForge)
-Rico (SourceForge)
-Toine (SourceForge)
-shimaore (SourceForge)
+zhangst (GitHub)

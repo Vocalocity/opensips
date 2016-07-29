@@ -1,5 +1,4 @@
-/* $Id$
- *
+/*
  * Copyright (C) 2005 Voice System SRL
  *
  * This file is part of opensips, a free SIP server.
@@ -16,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * ---------
@@ -129,6 +128,9 @@ static inline char* build_sipping(str *curi, struct socket_info* s, str *path,
 																int *len_p)
 {
 #define s_len(_s) (sizeof(_s)-1)
+#define MAX_BRANCHID 9999999
+#define MIN_BRANCHID 1000000
+#define LEN_BRANCHID 7  /* NOTE: this must be sync with the MX and MIN values !! */
 	static char buf[MAX_SIPPING_SIZE];
 	char *p, proto_str[4];
 	str address, port;
@@ -158,7 +160,7 @@ static inline char* build_sipping(str *curi, struct socket_info* s, str *path,
 
 	if ( sipping_method.len + 1 + curi->len + s_len(" SIP/2.0"CRLF) +
 		s_len("Via: SIP/2.0/") + st.len + address.len +
-		1 + port.len + s_len(";branch=0") +
+		1 + port.len + s_len(";branch=z9hG4bK") + LEN_BRANCHID +
 		(path->len ? (s_len(CRLF"Route: ") + path->len) : 0) +
 		s_len(CRLF"From: ") +  sipping_from.len + s_len(";tag=") + 8 +
 		s_len(CRLF"To: ") + curi->len +
@@ -182,13 +184,16 @@ static inline char* build_sipping(str *curi, struct socket_info* s, str *path,
 	append_str( p, address);
 	*(p++) = ':';
 	append_str( p, port);
+	append_fix( p, ";branch=z9hG4bK");
+	int2bstr(
+		(long)(rand()/(float)RAND_MAX * (MAX_BRANCHID-MIN_BRANCHID) + MIN_BRANCHID),
+		p+LEN_BRANCHID-INT2STR_MAX_LEN+1, NULL);
+	p += LEN_BRANCHID;
 	if (path->len) {
-		append_fix( p, ";branch=0"CRLF"Route: ");
+		append_fix( p, CRLF"Route: ");
 		append_str( p, *path);
-		append_fix( p, CRLF"From: ");
-	} else {
-		append_fix( p, ";branch=0"CRLF"From: ");
 	}
+	append_fix( p, CRLF"From: ");
 	append_str( p, sipping_from);
 	append_fix( p, ";tag=");
 	len = 8;

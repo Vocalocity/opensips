@@ -1,5 +1,4 @@
-/* $Id$
- *
+/*
  * Copyright (C) 2007-2009 Dan Pascu
  *
  * This file is part of opensips, a free SIP server.
@@ -16,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  */
 
@@ -268,11 +267,26 @@ static stat_export_t statistics[] = {
 };
 #endif
 
+static dep_export_t deps = {
+	{ /* OpenSIPS module dependencies */
+		{ MOD_TYPE_DEFAULT, "sl",     DEP_ABORT  },
+		{ MOD_TYPE_DEFAULT, "tm",     DEP_ABORT  },
+		{ MOD_TYPE_DEFAULT, "dialog", DEP_SILENT },
+		{ MOD_TYPE_NULL, NULL, 0 },
+	},
+	{ /* modparam dependencies */
+		{ NULL, NULL },
+	},
+};
+
 struct module_exports exports = {
     "nat_traversal", // module name
+    MOD_TYPE_DEFAULT,// class of this module
     MODULE_VERSION,  // module version
     DEFAULT_DLFLAGS, // dlopen flags
+    &deps,           // OpenSIPS module dependencies
     commands,        // exported functions
+    0,               // exported async functions
     parameters,      // exported parameters
     NULL,            // exported statistics (initialized early in mod_init)
     NULL,            // exported MI functions
@@ -1574,13 +1588,15 @@ ClientNatTest(struct sip_msg *msg, unsigned int tests)
 static void
 send_keepalive(NAT_Contact *contact)
 {
+#define MAX_BRANCHID 9999999
+#define MIN_BRANCHID 1000000
     char buffer[8192], *from_uri, *ptr;
     static char from[64] = FROM_PREFIX;
     static char *from_ip = from + sizeof(FROM_PREFIX) - 1;
     static struct socket_info *last_socket = NULL;
     struct hostent* hostent;
     union sockaddr_union to;
-    int nat_port, len;
+    int nat_port, len, tolen;
     str nat_ip;
 
     if (keepalive_params.from == NULL) {
@@ -1596,7 +1612,7 @@ send_keepalive(NAT_Contact *contact)
 
     len = snprintf(buffer, sizeof(buffer),
                    "%s %s SIP/2.0\r\n"
-                   "Via: SIP/2.0/UDP %.*s:%d;branch=0\r\n"
+                   "Via: SIP/2.0/UDP %.*s:%d;branch=z9hG4bK%ld\r\n"
                    "From: %s;tag=%x\r\n"
                    "To: %s\r\n"
                    "Call-ID: %s-%x-%x@%.*s\r\n"
@@ -1606,6 +1622,7 @@ send_keepalive(NAT_Contact *contact)
                    keepalive_params.method, contact->uri,
                    contact->socket->address_str.len,
                    contact->socket->address_str.s, contact->socket->port_no,
+                   (long)(rand()/(float)RAND_MAX * (MAX_BRANCHID-MIN_BRANCHID) + MIN_BRANCHID),
                    from_uri, keepalive_params.from_tag++,
                    contact->uri, keepalive_params.callid_prefix,
                    keepalive_params.callid_counter++, get_ticks(),
@@ -1627,14 +1644,25 @@ send_keepalive(NAT_Contact *contact)
     nat_port = strtol(ptr+1, NULL, 10);
     hostent = sip_resolvehost(&nat_ip, NULL, NULL, False, NULL);
     hostent2su(&to, hostent, 0, nat_port);
-    udp_send(contact->socket, buffer, len, &to);
+
+	tolen=sockaddru_len(to);
+again:
+	if (sendto(contact->socket->socket, buffer, len, 0, &to.s, tolen)==-1) {
+		if (errno==EINTR) goto again;
+		LM_ERR("sendto() failed with %s(%d)\n", strerror(errno),errno);
+	}
 }
 
 
 static void
-keepalive_timer(unsigned int ticks, void *data)
+keepalive_timer(unsigned int ticks, void *counter)
 {
-    static unsigned iteration = 0;
+    // we do not need to worry on accessing the counter without lock from
+    // all the processes where this timer routine gets executed, as the 
+    // the routine is registered with TIMER_FLAG_DELAY_ON_DELAY and the 
+    // timer core will take care and avoid overlapping between the executions
+    // of this routine (only one execution at the time)
+    unsigned iteration = *(unsigned*)(unsigned long*)counter;
     NAT_Contact *contact;
     HashSlot *slot;
     time_t now;
@@ -1662,7 +1690,7 @@ keepalive_timer(unsigned int ticks, void *data)
         }
     }
 
-    iteration = (iteration+1) % keepalive_interval;
+    *(unsigned*)(unsigned long*)counter = (iteration+1) % keepalive_interval;
 }
 
 
@@ -1864,9 +1892,17 @@ mod_init(void)
         LM_NOTICE("using 10 seconds for keepalive_interval\n");
         keepalive_interval = 10;
     }
-    if (register_timer_process( "nt-pinger", keepalive_timer, NULL, 1,
-    TIMER_PROC_INIT_FLAG)==NULL) {
-        LM_ERR("failed to register keepalive timer process\n");
+    // allocate a shm variable to keep the counter used by the keepalive
+    // timer routine - it must be shared as the routine get executed
+    // in different processes
+    if (NULL==(param=(int*) shm_malloc(sizeof(int)))) {
+        LM_ERR("cannot allocate shm memory for keepalive counter\n");
+        return -1;
+    }
+    *param = 0;
+    if (register_timer( "nt-pinger", keepalive_timer, (void*)(long)param, 1,
+    TIMER_FLAG_DELAY_ON_DELAY)<0) {
+        LM_ERR("failed to register keepalive timer\n");
         return -1;
     }
 
@@ -1907,16 +1943,16 @@ preprocess_request(struct sip_msg *msg, void *_param)
     str totag;
 
     if (msg->REQ_METHOD != METHOD_INVITE)
-        return 1;
+        return SCB_RUN_ALL;
 
     if (parse_headers(msg, HDR_TO_F, 0) == -1) {
         LM_ERR("failed to parse To header\n");
-        return -1;
+        return SCB_RUN_ALL;
     }
 
     if (!msg->to) {
         LM_ERR("missing To header\n");
-        return -1;
+        return SCB_RUN_ALL;
     }
 
     totag = get_to(msg)->tag_value;
@@ -1924,7 +1960,7 @@ preprocess_request(struct sip_msg *msg, void *_param)
         msg->msg_flags |= FL_NAT_TRACK_DIALOG;
     }
 
-    return 1;
+	return SCB_RUN_ALL;
 }
 
 

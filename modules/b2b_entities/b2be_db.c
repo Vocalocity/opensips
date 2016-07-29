@@ -1,6 +1,4 @@
 /*
- * $Id: b2be_db.c $
- *
  * back-to-back entities module
  *
  * Copyright (C) 2011 Free Software Fundation
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -432,7 +430,7 @@ int b2b_entities_restore(void)
 	if (DB_CAPABILITY(b2be_dbf, DB_CAP_FETCH))
 	{
 		if(b2be_dbf.query(b2be_db,0,0,0,qcols, 0,
-			DB_COLS_NO, 0, 0) < 0) 
+			DB_COLS_NO, 0, 0) < 0)
 		{
 			LM_ERR("Error while querying (fetch) database\n");
 			return -1;
@@ -479,7 +477,7 @@ int b2b_entities_restore(void)
 				htable = server_htable;
 				if(b2b_parse_key(&dlg.tag[1], &hash_index, &local_index) < 0)
 				{
-					LM_ERR("Wrong format for b2b key [%.*s]\n", dlg.tag[1].len,  dlg.tag[1].s);
+					LM_ERR("Wrong format for b2b key [%.*s]\n", dlg.tag[1].len, dlg.tag[1].s);
 					goto error;
 				}
 			}
@@ -489,7 +487,7 @@ int b2b_entities_restore(void)
 
 				if(b2b_parse_key(&dlg.callid, &hash_index, &local_index) < 0)
 				{
-					LM_ERR("Wrong format for b2b key [%.*s]\n", dlg.callid.len,  dlg.callid.s);
+					LM_ERR("Wrong format for b2b key [%.*s]\n", dlg.callid.len, dlg.callid.s);
 					goto error;
 				}
 			}
@@ -557,14 +555,13 @@ int b2b_entities_restore(void)
 			memset(&leg, 0, sizeof(dlg_leg_t));
 			leg.tag.s= (char*)row_vals[21].val.string_val;
 			if(!leg.tag.s)
-			{
 				continue;
-			}
 			leg.tag.len       = strlen(leg.tag.s);
+			leg.cseq          = row_vals[22].val.int_val;
 			leg.contact.s     = (char*)row_vals[23].val.string_val;
 			leg.contact.len   = leg.contact.s?strlen(leg.contact.s):0;
+			leg.route_set.s   = (char*)row_vals[24].val.string_val;
 			leg.route_set.len = leg.route_set.s?strlen(leg.route_set.s):0;
-			leg.cseq          = row_vals[22].val.int_val;
 
 			new_leg = b2b_dup_leg(&leg, SHM_MEM_TYPE);
 			if(new_leg== NULL)
@@ -577,7 +574,7 @@ int b2b_entities_restore(void)
 
 		/* any more data to be fetched ?*/
 		if (DB_CAPABILITY(b2be_dbf, DB_CAP_FETCH)) {
-			if (b2be_dbf.fetch_result( b2be_db, &result, no_rows) < 0) 
+			if (b2be_dbf.fetch_result( b2be_db, &result, no_rows) < 0)
 			{
 				LM_ERR("fetching more rows failed\n");
 				goto error;

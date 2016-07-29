@@ -1,5 +1,4 @@
-/* $Id$
- *
+/*
  * simple, very fast, malloc library
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -16,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -30,7 +29,7 @@
  */
 
 
-#if !defined(f_malloc_h) && !defined(VQ_MALLOC) 
+#if !defined(f_malloc_h) && !defined(VQ_MALLOC)
 #define f_malloc_h
 
 #ifdef DBG_QM_MALLOC
@@ -102,10 +101,10 @@ struct fm_block{
 	unsigned long real_used; /* used+malloc overhead*/
 	unsigned long max_real_used;
 #endif
-	
+
 	struct fm_frag* first_frag;
 	struct fm_frag* last_frag;
-	
+
 	struct fm_frag_lnk free_hash[F_HASH_SIZE];
 };
 
@@ -121,14 +120,14 @@ void* fm_malloc(struct fm_block*, unsigned long size);
 #endif
 
 #ifdef DBG_F_MALLOC
-void  fm_free(struct fm_block*, void* p, const char* file, const char* func, 
+void  fm_free(struct fm_block*, void* p, const char* file, const char* func,
 				unsigned int line);
 #else
 void  fm_free(struct fm_block*, void* p);
 #endif
 
 #ifdef DBG_F_MALLOC
-void*  fm_realloc(struct fm_block*, void* p, unsigned long size, 
+void*  fm_realloc(struct fm_block*, void* p, unsigned long size,
 					const char* file, const char* func, unsigned int line);
 #else
 void*  fm_realloc(struct fm_block*, void* p, unsigned long size);

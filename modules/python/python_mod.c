@@ -1,5 +1,4 @@
-/* $Id: python_mod.c,v 1.1 2009/12/09 09:28:26 root Exp $
- *
+/*
  * Copyright (C) 2009 Sippy Software, Inc., http://www.sippysoft.com
  *
  * This file is part of opensips, a free SIP server.
@@ -16,9 +15,11 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
 */
+
+#include <Python.h>
 
 #include "../../str.h"
 #include "../../sr_module.h"
@@ -28,7 +29,6 @@
 #include "python_msgobj.h"
 #include "python_support.h"
 
-#include <Python.h>
 #include <libgen.h>
 
 static int mod_init(void);
@@ -67,9 +67,12 @@ static cmd_export_t cmds[] = {
 /** module exports */
 struct module_exports exports = {
     "python",                       /* module name */
+    MOD_TYPE_DEFAULT,/* class of this module */
     MODULE_VERSION,
     RTLD_NOW | RTLD_GLOBAL,         /* dlopen flags */
+    NULL,                           /* OpenSIPS module dependencies */
     cmds,                           /* exported functions */
+    0,                              /* exported async functions */
     params,                         /* exported parameters */
     0,                              /* exported statistics */
     0,                              /* exported MI functions */
@@ -99,9 +102,6 @@ mod_init(void)
         child_init_mname.len = strlen(child_init_mname.s);
     }
 
-    dname = dirname(script_name.s);
-    if (strlen(dname) == 0)
-        dname = ".";
     bname = basename(script_name.s);
     i = strlen(bname);
     if (bname[i - 1] == 'c' || bname[i - 1] == 'o')
@@ -113,6 +113,9 @@ mod_init(void)
           script_name.s);
         return -1;
     }
+    dname = dirname(script_name.s);
+    if (strlen(dname) == 0)
+        dname = ".";
 
     Py_Initialize();
     PyEval_InitThreads();

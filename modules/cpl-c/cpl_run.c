@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * -------
@@ -25,7 +23,7 @@
  * 2003-09-11 : build_lump_rpl() merged into add_lump_rpl() (bogdan)
  * 2004-06-14 : all global variables merged into cpl_env and cpl_fct;
  *              append_branches param added to lookup node (bogdan)
- * 2004-06-14 : flag CPL_IS_STATEFUL is set now immediately after the 
+ * 2004-06-14 : flag CPL_IS_STATEFUL is set now immediately after the
  *              transaction is created (bogdan)
 */
 
@@ -295,7 +293,7 @@ static inline char *run_lookup( struct cpl_interpreter *intr )
 					LM_DBG("adding <%.*s>q=%d\n",
 						contact->c.len,contact->c.s,
 						(int)((contact->q==Q_UNSPECIFIED)?10:10*contact->q));
-					if (add_location( &(intr->loc_set), &contact->c, 
+					if (add_location( &(intr->loc_set), &contact->c,
 					&contact->received,
 					(int)((contact->q==Q_UNSPECIFIED)?10:10*contact->q),
 					CPL_LOC_DUPL|
@@ -927,7 +925,7 @@ static inline int run_default( struct cpl_interpreter *intr )
 				return SCRIPT_DEFAULT;
 			} else {
 				/* case 2 : no location modifications or signaling operations
-				 * performed, location set non-empty: (This can only happen 
+				 * performed, location set non-empty: (This can only happen
 				 * for outgoing calls.) ->
 				 * Proxy the call to the address in the location set.
 				 * With other words, let ser to continue processing the
@@ -935,7 +933,7 @@ static inline int run_default( struct cpl_interpreter *intr )
 				return SCRIPT_DEFAULT;
 			}
 		} else {
-			/* case 3 : location modifications performed, no signaling 
+			/* case 3 : location modifications performed, no signaling
 			 * operations ->
 			 * Proxy the call to the addresses in the location set */
 			if (!cpl_proxy_to_loc_set(intr->msg,&(intr->loc_set),intr->flags))
@@ -943,7 +941,7 @@ static inline int run_default( struct cpl_interpreter *intr )
 			return SCRIPT_RUN_ERROR;
 		}
 	} else {
-		/* case 4 : proxy operation previously taken -> return whatever the 
+		/* case 4 : proxy operation previously taken -> return whatever the
 		 * "best" response is of all accumulated responses to the call to this
 		 * point, according to the rules of the underlying signaling
 		 * protocol. */

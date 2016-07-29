@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
  /*
   * History:
@@ -49,7 +47,7 @@ int cpl_db_bind(const str* db_url, const str *db_table)
 		    "Did you forget to load a database module ?\n");
 		return -1;
 	}
-	
+
 	/* CPL module uses all database functions */
 	if (!DB_CAPABILITY(cpl_dbf, DB_CAP_ALL)) {
 		LM_CRIT("Database modules does not "
@@ -80,12 +78,12 @@ int cpl_db_init(const str* db_url, const str* db_table)
 	}
 
 	db_hdl=cpl_dbf.init(db_url);
-	
+
 	if (db_hdl==0){
 		LM_CRIT("cannot initialize database connection\n");
 		return -1;
 	}
-	
+
 	if (cpl_dbf.use_table(db_hdl, db_table)<0) {
 		LM_CRIT("cannot select table \"%.*s\"\n",db_table->len, db_table->s);
 		cpl_db_close();

@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Usrloc module interface
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * ---------
@@ -56,6 +54,7 @@
 #include "udomain.h"         /* {insert,delete,get,release}_urecord */
 #include "urecord.h"         /* {insert,delete,get}_ucontact */
 #include "ucontact.h"        /* update_ucontact */
+#include "ureplication.h"
 #include "ul_mi.h"
 #include "ul_callback.h"
 #include "usrloc.h"
@@ -86,9 +85,13 @@ static void timer(unsigned int ticks, void* param); /*!< Timer handler */
 static int child_init(int rank);                    /*!< Per-child init function */
 static int mi_child_init(void);
 
+static int add_replication_dest(modparam_t type, void *val);
+
 extern int bind_usrloc(usrloc_api_t* api);
 extern int ul_locks_no;
 extern rw_lock_t *sync_lock;
+extern int skip_replicated_db_ops;
+
 /*
  * Module parameters and their default values
  */
@@ -123,6 +126,10 @@ unsigned int nat_bflag = (unsigned int)-1;
 static char *nat_bflag_str = 0;
 unsigned int init_flag = 0;
 
+/* usrloc data replication using the bin interface */
+int accept_replicated_udata;
+struct replication_dest *replication_dests;
+
 db_con_t* ul_dbh = 0; /* Database connection handle */
 db_func_t ul_dbf;
 
@@ -137,7 +144,7 @@ static cmd_export_t cmds[] = {
 
 
 /*! \brief
- * Exported parameters 
+ * Exported parameters
  */
 static param_export_t params[] = {
 	{"user_column",        STR_PARAM, &user_col.s        },
@@ -166,6 +173,11 @@ static param_export_t params[] = {
 	{"hash_size",          INT_PARAM, &ul_hash_size      },
 	{"nat_bflag",          STR_PARAM, &nat_bflag_str     },
 	{"nat_bflag",          INT_PARAM, &nat_bflag         },
+    /* data replication through UDP binary packets */
+	{ "accept_replicated_contacts",INT_PARAM, &accept_replicated_udata },
+	{ "replicate_contacts_to",     STR_PARAM|USE_FUNC_PARAM,
+	                            (void *)add_replication_dest           },
+	{ "skip_replicated_db_ops", INT_PARAM, &skip_replicated_db_ops     },
 	{0, 0, 0}
 };
 
@@ -194,12 +206,32 @@ static mi_export_t mi_cmds[] = {
 	{ 0, 0, 0, 0, 0, 0}
 };
 
+static module_dependency_t *get_deps_db_mode(param_export_t *param)
+{
+	if (*(int *)param->param_pointer == NO_DB)
+		return NULL;
+
+	return alloc_module_dep(MOD_TYPE_SQLDB, NULL, DEP_ABORT);
+}
+
+static dep_export_t deps = {
+	{ /* OpenSIPS module dependencies */
+		{ MOD_TYPE_NULL, NULL, 0 },
+	},
+	{ /* modparam dependencies */
+		{ "db_mode", get_deps_db_mode },
+		{ NULL, NULL },
+	},
+};
 
 struct module_exports exports = {
 	"usrloc",
+	MOD_TYPE_DEFAULT,/*!< class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /*!< dlopen flags */
+	&deps,           /*!< OpenSIPS module dependencies */
 	cmds,       /*!< Exported functions */
+	0,          /*!< Exported async functions */
 	params,     /*!< Export parameters */
 	mod_stats,  /*!< exported statistics */
 	mi_cmds,    /*!< exported MI functions */
@@ -261,7 +293,8 @@ static int mod_init(void)
 	}
 
 	/* Register cache timer */
-	register_timer( "ul-timer", timer, 0, timer_interval);
+	register_timer( "ul-timer", timer, 0, timer_interval,
+		TIMER_FLAG_DELAY_ON_DELAY);
 
 	/* init the callbacks list */
 	if ( init_ulcb_list() < 0) {
@@ -290,8 +323,8 @@ static int mod_init(void)
 		}
 	}
 
-	fix_flag_name(&nat_bflag_str, nat_bflag);
-	
+	fix_flag_name(nat_bflag_str, nat_bflag);
+
 	nat_bflag = get_flag_id_by_name(FLAG_TYPE_BRANCH, nat_bflag_str);
 
 	if (nat_bflag==(unsigned int)-1) {
@@ -305,6 +338,19 @@ static int mod_init(void)
 
 	if (ul_event_init() < 0) {
 		LM_ERR("cannot initialize USRLOC events\n");
+		return -1;
+	}
+
+	/* register handler for processing usrloc packets from the bin interface */
+	if (accept_replicated_udata &&
+		bin_register_cb(repl_module_name.s, receive_binary_packet) < 0) {
+		LM_ERR("cannot register binary packet callback!\n");
+		return -1;
+	}
+
+	if (replication_dests && !bin) {
+		LM_ERR("You are using contacts replication, but there "
+				"is no bin_listen parameter defined!\n");
 		return -1;
 	}
 
@@ -324,15 +370,9 @@ static int child_init(int _rank)
 			return 0;
 		case DB_ONLY:
 		case WRITE_THROUGH:
-			/* we need connection from working SIP and TIMER and MAIN
-			 * processes only */
-			if (_rank<=0 && _rank!=PROC_TIMER && _rank!=PROC_MAIN)
-				return 0;
-			break;
 		case WRITE_BACK:
-			/* connect only from TIMER (for flush), from MAIN (for
-			 * final flush() and from child 1 for preload */
-			if (_rank!=PROC_TIMER && _rank!=PROC_MAIN && _rank!=1)
+			/* we need connection from SIP workers, BIN and MAIN procs */
+			if (_rank < PROC_MAIN && _rank != PROC_BIN )
 				return 0;
 			break;
 	}
@@ -420,5 +460,47 @@ static void timer(unsigned int ticks, void* param)
 	}
 	if (sync_lock)
 		lock_stop_read(sync_lock);
+}
+
+static int add_replication_dest(modparam_t type, void *val)
+{
+	struct replication_dest *rd;
+	char *host;
+	int hlen, port;
+	int proto;
+	struct hostent *he;
+	str st;
+
+	rd = pkg_malloc(sizeof *rd);
+	memset(rd, 0, sizeof *rd);
+
+	if (parse_phostport(val, strlen(val), &host, &hlen, &port, &proto) < 0) {
+		LM_ERR("bad replication destination IP: '%s'!\n", (char *)val);
+		return -1;
+	}
+
+	if (proto == PROTO_NONE)
+		proto = PROTO_UDP;
+
+	if (proto != PROTO_UDP) {
+		LM_ERR("usrloc replication only supports UDP packets!\n");
+		return -1;
+	}
+
+	st.s = host;
+	st.len = hlen;
+	he = sip_resolvehost(&st, (unsigned short *)&port,
+	                          (unsigned short *)&proto, 0, 0);
+	if (!he) {
+		LM_ERR("cannot resolve host: %.*s\n", hlen, host);
+		return -1;
+	}
+
+	hostent2su(&rd->to, he, 0, port);
+
+	rd->next = replication_dests;
+	replication_dests = rd;
+
+	return 1;
 }
 

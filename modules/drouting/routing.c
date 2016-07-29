@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2005-2008 Voice Sistem SRL
  *
  * This file is part of Open SIP Server (OpenSIPS).
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * For any questions about this software and its license, please contact
  * Voice Sistem at following e-mail address:
@@ -214,8 +212,8 @@ error:
 }
 
 
-int add_carrier(int db_id, char *id, int flags, char *gwlist, char *attrs,
-															rt_data_t *rd)
+int add_carrier(char *id, int flags, char *gwlist, char *attrs,
+													int state, rt_data_t *rd)
 {
 	pcr_t *cr = NULL;
 	unsigned int i;
@@ -237,7 +235,7 @@ int add_carrier(int db_id, char *id, int flags, char *gwlist, char *attrs,
 		/* check that all dest to be GW! */
 		for( i=0 ; i<cr->pgwa_len ; i++ ) {
 			if (cr->pgwl[i].is_carrier) {
-				LM_ERR("invalid carrier <%s> defintion as points to other "
+				LM_ERR("invalid carrier <%s> definition as points to other "
 					"carrier (%.*s) in destination list\n",id,
 					cr->pgwl[i].dst.carrier->id.len,
 					cr->pgwl[i].dst.carrier->id.s);
@@ -247,8 +245,15 @@ int add_carrier(int db_id, char *id, int flags, char *gwlist, char *attrs,
 	}
 
 	/* copy integer fields */
-	cr->db_id = db_id;
 	cr->flags = flags;
+
+	/* set state */
+	if (state!=0)
+		/* disabled */
+		cr->flags |= DR_CR_FLAG_IS_OFF;
+	else
+		/* enabled */
+		cr->flags &= ~DR_CR_FLAG_IS_OFF;
 
 	/* copy id */
 	cr->id.s = (char*)(cr+1);
@@ -414,7 +419,7 @@ add_dst(
 	rt_data_t *r,
 	/* id */
 	char *id,
-	/* ip address */ 
+	/* ip address */
 	char* ip,
 	/* strip len */
 	int strip,
@@ -425,8 +430,11 @@ add_dst(
 	/* dst attrs*/
 	char* attrs,
 	/* probe_mode */
-	int probing
-
+	int probing,
+	/* socket */
+	struct socket_info *sock,
+	/* state */
+	int state
 	)
 {
 	static unsigned id_counter = 0;
@@ -495,20 +503,36 @@ add_dst(
 	}
 	memset(pgw,0,sizeof(pgw_t));
 
-	switch(probing)
-	{
-	case 0:
-		pgw->flags = 0;
-		break;
-	case 1:
-		pgw->flags =  DR_DST_PING_DSBL_FLAG;
-		break;
-	case 2:
-		pgw->flags =  DR_DST_PING_PERM_FLAG;
-		break;
-	default:
-		goto err_exit;
+	/* set probing related flags  */
+	switch(probing) {
+		case 0:
+			break;
+		case 1:
+			pgw->flags |=  DR_DST_PING_DSBL_FLAG;
+			break;
+		case 2:
+			pgw->flags |=  DR_DST_PING_PERM_FLAG;
+			break;
+		default:
+			goto err_exit;
 	}
+
+	/* set state related flags  */
+	switch(state) {
+		case 0:
+			break;
+		case 1:
+			pgw->flags |=  DR_DST_STAT_DSBL_FLAG|DR_DST_STAT_NOEN_FLAG;
+			break;
+		case 2:
+			pgw->flags |=  DR_DST_STAT_DSBL_FLAG;
+			break;
+		default:
+			goto err_exit;
+	}
+
+	/* set outbound socket */
+	pgw->sock = sock;
 
 	pgw->_id = ++id_counter;
 
@@ -548,6 +572,7 @@ add_dst(
 	}
 	hostent2ip_addr( &pgw->ips[0], &proxy->host, proxy->addr_idx);
 	pgw->ports[0] = proxy->port;
+	pgw->protos[0] = proxy->proto;
 	LM_DBG("first gw ip addr [%s]\n", ip_addr2a(&pgw->ips[0]));
 
 	pgw->ips_no = 1;
@@ -555,6 +580,7 @@ add_dst(
 	while (pgw->ips_no<DR_MAX_IPS && (get_next_su( proxy, &sau, 0)==0) ) {
 		su2ip_addr( &pgw->ips[pgw->ips_no], &sau);
 		pgw->ports[pgw->ips_no] = proxy->port;
+		pgw->protos[pgw->ips_no] = proxy->proto;
 		LM_DBG("additional gw ip addr [%s]\n",
 			ip_addr2a( &pgw->ips[pgw->ips_no] ) );
 		pgw->ips_no++;
@@ -607,7 +633,7 @@ void del_carriers_list(
 	}
 }
 
-void 
+void
 free_rt_data(
 		rt_data_t* rt_data,
 		int all

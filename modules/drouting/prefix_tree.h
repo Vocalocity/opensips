@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2005-2008 Voice Sistem SRL
  *
  * This file is part of Open SIP Server (OpenSIPS).
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * For any questions about this software and its license, please contact
  * Voice Sistem at following e-mail address:
@@ -59,25 +57,29 @@ do {\
 #define DR_DST_PING_PERM_FLAG   (1<<1)
 #define DR_DST_STAT_DSBL_FLAG   (1<<2)
 #define DR_DST_STAT_NOEN_FLAG   (1<<3)
+#define DR_DST_STAT_DIRT_FLAG   (1<<4)
+#define DR_DST_STAT_MASK        (DR_DST_STAT_DSBL_FLAG|DR_DST_STAT_NOEN_FLAG)
 
 #define DR_MAX_IPS  32
 
 /* list of PSTN gw */
 typedef struct pgw_ {
-	/* internal numerical ID */
+	/* internal numerical ID, not DB related */
 	unsigned int _id;
-	/* GW ID*/
+	/* GW ID from DB */
 	str id;
 	/* type of gateway */
 	int type;
 	str ip_str;
+	struct socket_info *sock;
 	/* strip / pri and attrs */
 	str pri;
 	int strip;
 	str attrs;
-	/* addres and port */
+	/* address and port */
 	struct ip_addr ips[DR_MAX_IPS];
 	unsigned short ports[DR_MAX_IPS];
+	unsigned short protos[DR_MAX_IPS];
 	unsigned short ips_no;
 	struct pgw_ *next;
 	int flags;
@@ -98,12 +100,11 @@ typedef struct pgw_list_ {
 #define DR_CR_FLAG_WEIGHT (1<<0)
 #define DR_CR_FLAG_FIRST  (1<<1)
 #define DR_CR_FLAG_IS_OFF (1<<2)
+#define DR_CR_FLAG_DIRTY  (1<<3)
 
 /* list of carriers */
 struct pcr_ {
-	/* id matching the one in db */
-	unsigned int db_id;
-	/* carrier ID/name */
+	/* carrier ID/name from DB */
 	str id;
 	/* flags */
 	unsigned int flags;
@@ -161,7 +162,7 @@ typedef struct ptree_ {
 	ptree_node_t ptnode[PTREE_CHILDREN];
 } ptree_t;
 
-void 
+void
 print_interim(
 		int,
 		int,
@@ -193,7 +194,7 @@ get_prefix(
 
 int
 add_rt_info(
-	ptree_node_t*, 
+	ptree_node_t*,
 	rt_info_t*,
 	unsigned int
 	);

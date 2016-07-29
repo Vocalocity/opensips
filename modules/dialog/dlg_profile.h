@@ -1,6 +1,5 @@
 /*
- * $Id$
- *
+ * Copyright (C) 2009-2014 OpenSIPS Solutions
  * Copyright (C) 2008 Voice System SRL
  *
  * This file is part of opensips, a free SIP server.
@@ -15,9 +14,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -41,7 +40,7 @@ struct lock_set_list
 {
 	gen_lock_set_t * locks;
 	struct lock_set_list * next;
-	
+
 };
 
 struct dlg_profile_link {
@@ -66,7 +65,7 @@ struct dlg_profile_table {
 	/*
 	 * information for profiles with values
 	 */
-	
+
 	map_t * entries;
 
 	/*
@@ -79,8 +78,11 @@ struct dlg_profile_table {
 	struct dlg_profile_table *next;
 };
 
-typedef int (*set_dlg_profile_f)(struct sip_msg *msg, str *value,
-										struct dlg_profile_table *profile);
+typedef int (*set_dlg_profile_f)(struct dlg_cell *dlg, str *value,
+                        struct dlg_profile_table *profile, char is_replicated);
+
+typedef int (*unset_dlg_profile_f)(struct dlg_cell *dlg, str *value,
+                         struct dlg_profile_table *profile);
 
 typedef unsigned int (*get_profile_size_f)(struct dlg_profile_table *profile,
 										str *value);
@@ -102,15 +104,15 @@ void destroy_dlg_profiles();
 
 struct dlg_profile_table* search_dlg_profile(str *name);
 
-void destroy_linkers(struct dlg_profile_link *linker);
+void destroy_linkers(struct dlg_profile_link *linker, char is_replicated);
 
-int set_dlg_profile(struct sip_msg *msg, str *value,
+int set_dlg_profile(struct dlg_cell *dlg, str *value,
+		struct dlg_profile_table *profile, char is_replicated);
+
+int unset_dlg_profile(struct dlg_cell *dlg, str *value,
 		struct dlg_profile_table *profile);
 
-int unset_dlg_profile(struct sip_msg *msg, str *value,
-		struct dlg_profile_table *profile);
-
-int is_dlg_in_profile(struct sip_msg *msg, struct dlg_profile_table *profile,
+int is_dlg_in_profile(struct dlg_cell *dlg, struct dlg_profile_table *profile,
 		str *value);
 
 unsigned int get_profile_size(struct dlg_profile_table *profile, str *value);

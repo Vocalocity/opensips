@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2013 VoIP Embedded Inc.
  *
  * This file is part of Open SIP Server (opensips).
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * History:
  * ---------
@@ -28,6 +26,14 @@
 #ifndef _MI_XMLRPC_HTTP_HTTP_FNC_H
 #define _MI_XMLRPC_HTTP_HTTP_FNC_H
 
+#define MI_XMLRPC_XML_START		"<?xml version=\"1.0\" "	\
+	"encoding=\"UTF-8\"?>\r\n<methodResponse>\r\n<params>"	\
+	"\r\n<param><value><string>"
+#define MI_XMLRPC_XML_STOP		"</string></value></param>"	\
+	"\r\n</params>\r\n</methodResponse>\r\n"
+
+#define MI_XMLRPC_ASYNC_FAILED   ((void*)-2)
+#define MI_XMLRPC_ASYNC_EXPIRED  ((void*)-3)
 
 typedef struct mi_xmlrpc_http_html_page_data_ {
 	str page;
@@ -36,7 +42,6 @@ typedef struct mi_xmlrpc_http_html_page_data_ {
 
 typedef struct mi_xmlrpc_http_async_resp_data_ {
 	gen_lock_t* lock;
-	struct mi_root* tree;
 }mi_xmlrpc_http_async_resp_data_t;
 
 

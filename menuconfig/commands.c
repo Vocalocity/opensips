@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2012 OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
@@ -15,9 +13,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * -------
@@ -46,9 +44,9 @@ int save_all_changes(select_menu *menu,void *arg)
 	static char name_buf[128];
 	select_menu *current;
 	cfg_gen_t *it;
-	
+
 #if MENUCONFIG_HAVE_SOURCES > 0
-	/* Take care of compile related options */	
+	/* Take care of compile related options */
 	if (dump_make_conf(menu,arg) < 0)
 		fprintf(output,"Failed to save all compile related options\n");
 #else
@@ -61,7 +59,7 @@ int save_all_changes(select_menu *menu,void *arg)
 		strcpy(name_buf,"Save ");
 		strcat(name_buf,it->name);
 		current=find_menu(name_buf,main_menu);
-		if (save_m4_def(current,NULL) < 0) 
+		if (save_m4_def(current,NULL) < 0)
 			fprintf(output,"Failed to save cfg %s\n",it->name);
 	}
 
@@ -94,7 +92,7 @@ int reset_unsaved_compile(select_menu *menu,void *arg)
 	}
 	current->child_changed=CHILD_NO_CHANGES;
 
-	
+
 	print_notice(NOTICE_Y,NOTICE_X,1,"Changes have been reset. Press any key to continue");
 
 	return 0;
@@ -104,15 +102,13 @@ int reset_unsaved_compile(select_menu *menu,void *arg)
 int run_make_install(select_menu *menu,void *arg)
 {
 	int ret=0,status;
-	select_menu *current;
-	select_item *it;
-	
+
 	/* save current tty modes */
 	def_prog_mode();
 	/* restore original tty modes */
 	endwin();
 
-	/* temporarily ignore SIGINT 
+	/* temporarily ignore SIGINT
 	 * in case child is killed, we do not want to also exit main app
 	 */
 	signal(SIGINT, SIG_IGN);
@@ -134,28 +130,13 @@ int run_make_install(select_menu *menu,void *arg)
 		   but propagate SIGWINCH to adjust
 		window size */
 		signal(SIGINT, SIG_DFL);
-		/* check if TLS or SCTP, set env vars */
-		current = find_menu(CONF_COMPILE_FLAGS,main_menu);
-		for (it=current->item_list;it;it=it->next) {
-			if (memcmp(it->name,"USE_TLS",7) == 0 &&
-					it->enabled == 1) {
-				setenv("TLS", "1", 1);
-				continue;
-			}
-			if (memcmp(it->name,"USE_SCTP",8) == 0 &&
-					it->enabled == 1) {
-				setenv("SCTP", "1", 1);
-				continue;
-			}
-		}
-
 		execlp("make","make","install",(char *)0);
 		exit(-1);
 	}
 
 end:
 	/* Restore SIGINT handler */
-	signal(SIGINT,_quit_handler);	
+	signal(SIGINT,_quit_handler);
 	printf("\n\nPress any key to return to menuconfig\n\n");
 	getch();
 
@@ -174,7 +155,7 @@ int run_make_proper(select_menu *menu,void *arg)
 	/* restore original tty modes */
 	endwin();
 
-	/* temporarily ignore SIGINT 
+	/* temporarily ignore SIGINT
 	 * in case child is killed, we do not want to also exit main app
 	 */
 	signal(SIGINT, SIG_IGN);
@@ -202,7 +183,7 @@ int run_make_proper(select_menu *menu,void *arg)
 
 end:
 	/* Restore SIGINT handler */
-	signal(SIGINT,_quit_handler);	
+	signal(SIGINT,_quit_handler);
 	printf("\n\nPress any key to return to menuconfig\n\n");
 	getch();
 
@@ -232,7 +213,7 @@ int generate_cfg(select_menu *menu,void *arg)
 		fprintf(output,"Invalid menu name [%s]\n",items_menu->name);
 		return -1;
 	}
-	
+
 	p++;
 	m4_cfg = find_cfg_entry(p);
 
@@ -307,7 +288,7 @@ int read_install_prefix(select_menu *menu,void *arg)
 
 	print_notice(NOTICE_Y,NOTICE_X,0,"%s (Current = '%s') :",query_msg,
 			install_prefix?install_prefix:DEFAULT_INSTALL_PREFIX);
-	
+
 	/* print directory that user is typing */
 	echo();
 
@@ -330,7 +311,7 @@ int read_install_prefix(select_menu *menu,void *arg)
 			fprintf(output,"No more mem\n");
 			return -1;
 		}
-	
+
 		memset(install_prefix,0,str[len-1]=='/'?len+1:len+2);
 		memcpy(install_prefix,str,len);
 		if (str[len-1] != '/')
@@ -347,7 +328,7 @@ int read_install_prefix(select_menu *menu,void *arg)
 		install_prefix=NULL;
 		print_notice(NOTICE_Y,NOTICE_X,0,"%s. Install prefix is currently [%s]",folder_ok,
 			install_prefix?install_prefix:DEFAULT_INSTALL_PREFIX);
-		clrtoeol();	
+		clrtoeol();
 		print_notice(NOTICE_Y+1,NOTICE_X,1,"Press any key to continue !");
 		clrtoeol();
 	}
@@ -374,10 +355,10 @@ int save_m4_def(select_menu *menu,void *arg)
 		fprintf(output,"Invalid menu name [%s]\n",items_menu->name);
 		return -1;
 	}
-	
+
 	p++;
 	m4_cfg = find_cfg_entry(p);
-	
+
 	if (!m4_cfg) {
 		fprintf(output,"Failed to find cfg entry for %s\n",items_menu->name);
 		return -1;
@@ -387,7 +368,7 @@ int save_m4_def(select_menu *menu,void *arg)
 			run_locally?19:MENUCONFIG_CFG_PATH_LEN);
 	memcpy(cfg_path+(run_locally?19:MENUCONFIG_CFG_PATH_LEN),
 			m4_cfg->defs_m4,strlen(m4_cfg->defs_m4)+1);
-	
+
 	f = fopen(cfg_path,"w");
 	if (!f) {
 		fprintf(output,"Failed to open m4 defs\n");
@@ -418,6 +399,10 @@ int dump_make_conf(select_menu *menu,void *arg)
 	int i,k=0;
 
 	FILE *f = fopen(MAKE_CONF_FILE,"w");
+	if (!f) {
+		fprintf(stderr,"Failed to open [%s]\n",MAKE_CONF_FILE);
+		return -1;
+	}
 
 	/* START compile MODULES related options */
 	current = find_menu(CONF_EXCLUDED_MODS,main_menu);
@@ -458,20 +443,16 @@ int dump_make_conf(select_menu *menu,void *arg)
 	for (it=current->item_list;it;it=it->next) {
 		fprintf(f,"%sDEFS+= -D%s #%s",
 			it->enabled?"":"#",it->name,it->description);
-		if (strcmp(it->name,"USE_TLS") == 0 && it->enabled)
-			fprintf(f,"TLS=1\n");
-		else if (strcmp(it->name,"USE_SCTP") == 0 && it->enabled)
-			fprintf(f,"SCTP=1\n");
 		it->prev_state=it->enabled;
 	}
 
 	current->child_changed=CHILD_NO_CHANGES;
 	/* END compile DEFS related options */
-	
+
 	/* START install prefix related options */
 	current=find_menu(CONF_INSTALL_PREFIX,main_menu);
 	fprintf(f,"\nPREFIX=%s",install_prefix?install_prefix:DEFAULT_INSTALL_PREFIX);
-	
+
 	prev_prefix=install_prefix;
 	current->child_changed=CHILD_NO_CHANGES;
 	/* END install prefix related options */

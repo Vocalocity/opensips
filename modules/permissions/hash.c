@@ -1,6 +1,4 @@
 /*
- * $Id: $
- *
  * Hash table functions
  *
  * Copyright (C) 2009 Irina Stanescu
@@ -18,9 +16,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 
@@ -166,7 +164,7 @@ grp_found:
 
 	for (node = table[perm_hash(str_ip)]; node; node = node->next) {
 /*	 		LM_DBG("Comparing (%s %s) , (%d %d) , (%d %d) , (%d %d)\n",
-				ip_addr2a(node->ip), ip_addr2a(ip), 
+				ip_addr2a(node->ip), ip_addr2a(ip),
 				node->proto, proto,
 				node->port , port,
 				node->grp , grp);
@@ -229,6 +227,10 @@ int find_group_in_hash_table(struct address_list** table,
 {
 	struct address_list *node;
 	str str_ip;
+
+	if (ip == NULL){
+		return -1;
+	}
 
 	str_ip.len = ip->len;
 	str_ip.s = (char*) ip->u.addr;

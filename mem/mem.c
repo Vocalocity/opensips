@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -15,15 +13,15 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  *
  * History:
  * --------
  *  2003-04-08  init_mallocs split into init_{pkg,shm}_malloc (andrei)
- * 
+ *
  */
 
 
@@ -42,9 +40,7 @@
 	#endif
 #endif
 
-#ifdef SHM_MEM
 #include "shm_mem.h"
-#endif
 
 #ifdef PKG_MALLOC
 	char* mem_pool = NULL;
@@ -52,6 +48,8 @@
 		struct vqm_block* mem_block;
 	#elif defined F_MALLOC
 		struct fm_block* mem_block;
+	#elif defined HP_MALLOC
+		struct hp_block* mem_block;
 	#else
 		struct qm_block* mem_block;
 	#endif
@@ -72,12 +70,14 @@ int init_pkg_mallocs(void)
 		mem_block=vqm_malloc_init(mem_pool, pkg_mem_size);
 	#elif F_MALLOC
 		mem_block=fm_malloc_init(mem_pool, pkg_mem_size);
+	#elif HP_MALLOC
+		mem_block=hp_pkg_malloc_init(mem_pool, pkg_mem_size);
 	#else
 		mem_block=qm_malloc_init(mem_pool, pkg_mem_size);
 	#endif
 	if (mem_block==0){
 		LM_CRIT("could not initialize memory pool\n");
-		fprintf(stderr, "Too much pkg memory demanded: %ld\n",
+		fprintf(stderr, "Given PKG mem size is not enough: %ld\n",
 			pkg_mem_size );
 		return -1;
 	}
@@ -166,7 +166,7 @@ end:
 	event_pkg_pending = 0;
 }
 
-inline void pkg_threshold_check(void)
+void pkg_threshold_check(void)
 {
 	long pkg_perc, used, size;
 
@@ -194,14 +194,12 @@ inline void pkg_threshold_check(void)
 
 int init_shm_mallocs(void)
 {
-#ifdef SHM_MEM
 	if (shm_mem_init()<0) {
 		LM_CRIT("could not initialize shared memory pool, exiting...\n");
 		 fprintf(stderr, "Too much shared memory demanded: %ld\n",
 			shm_mem_size );
 		return -1;
 	}
-#endif
 	return 0;
 }
 

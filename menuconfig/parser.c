@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2012 OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
@@ -15,9 +13,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * -------
@@ -35,6 +33,7 @@
 #define MENUCONFIG_CFG_PATH_LEN		strlen(MENUCONFIG_CFG_PATH)
 
 static char prev_module[MAX_MODULE_NAME_SIZE];
+static int prev_module_len=0;
 static select_item *prev_item;
 
 /* Parses a single module dependency line */
@@ -56,8 +55,22 @@ int parse_dep_line(char *line,select_menu *parent)
 	mod_name[name_len]=0;
 
 	/* Is this still the previous module ? */
-	if (memcmp(prev_module,mod_name,name_len) != 0) {
-		
+	if (name_len == prev_module_len && memcmp(prev_module,mod_name,name_len) == 0) {
+		/* Previously found module with multiple deps.
+		 * Just add the new dependency */
+		fprintf(output,"found prev module %s with extra deps\n",mod_name);
+
+		mod_dep = p+1;
+		dep_len = (line+len) - mod_dep;
+		mod_dep[dep_len]=0;
+
+		if (add_dependency(prev_item,mod_dep) < 0) {
+			fprintf(output,"Failed to add dependency\n");
+			return -1;
+		}
+	} else {
+		fprintf(output,"found new module %s\n",mod_name);
+
 		/* nope, new module, get description */
 		mod_desc=p+1;
 		p = memchr(mod_desc,'|',line+len-mod_desc);
@@ -65,16 +78,16 @@ int parse_dep_line(char *line,select_menu *parent)
 			fprintf(output,"Malformed desc line\n");
 			return -1;
 		}
-		
+
 		desc_len = p-mod_desc;
-		mod_desc[desc_len]=0;	
-		
+		mod_desc[desc_len]=0;
+
 		item = create_item(mod_name,mod_desc);
 		if (item == NULL) {
 			fprintf(output,"Failed to create item\n");
 			return -1;
 		}
-	
+
 		mod_dep = p+1;
 		dep_len = (line+len) - mod_dep;
 		mod_dep[dep_len]=0;
@@ -90,18 +103,7 @@ int parse_dep_line(char *line,select_menu *parent)
 		prev_item = item;
 
 		strcpy(prev_module,mod_name);
-	} else {
-		/* Previously found module with multiple deps.
-		 * Just add the new dependency */
-
-		mod_dep = p+1;
-		dep_len = (line+len) - mod_dep;
-		mod_dep[dep_len]=0;
-
-		if (add_dependency(prev_item,mod_dep) < 0) {
-			fprintf(output,"Failed to add dependency\n");
-			return -1;
-		}
+		prev_module_len = name_len;
 	}
 
 	return 0;
@@ -237,7 +239,7 @@ int parse_prefix_line(char *line,select_menu *menu)
 	memcpy(install_prefix,p,pref_len);
 	if (p[pref_len-1] != '/')
 		install_prefix[pref_len-1]='/';
-		
+
 	/* also init the prev prefix, used for
 	 * resetting changes */
 	prev_prefix=install_prefix;
@@ -245,7 +247,7 @@ int parse_prefix_line(char *line,select_menu *menu)
 }
 
 /* Parse an m4 defs line for a cfg entry */
-#define READ_BUF_SIZE	512
+#define READ_BUF_SIZE	1024
 static char read_buf[READ_BUF_SIZE];
 int parse_defs_m4_line(char *line,select_menu *menu)
 {
@@ -275,7 +277,7 @@ int parse_defs_m4_line(char *line,select_menu *menu)
 		fprintf(output,"Failed to find macro value start\n");
 		return -1;
 	}
-	
+
 	value_start++;
 	value_end=memchr(value_start,'\'',line+len-value_start);
 	if (!value_end) {
@@ -347,7 +349,7 @@ int parse_defs_m4(select_menu *curr_menu,cfg_gen_t *curr_cfg)
 enum dep_states { PARSE_DEPENDENCIES, PARSE_INCLUDE_MODULES,
 				PARSE_COMPILE_DEFS, PARSE_PREFIX };
 
-int parse_make_conf()
+int parse_make_conf(void)
 {
 	enum dep_states state;
 	FILE *conf = fopen(MAKE_CONF_FILE,"r");
@@ -355,9 +357,12 @@ int parse_make_conf()
 	int defs=0;
 
 	if (!conf) {
-		fprintf(output,"Failed to open [%s]\n",MAKE_CONF_FILE);
-		return -1;
-
+		/* if we cannot find the Makefile.conf, try the template */
+		conf = fopen(MAKE_TEMP_FILE, "r");
+		if (!conf) {
+			fprintf(output,"Failed to open [%s]\n",MAKE_TEMP_FILE);
+			return -1;
+		}
 	}
 	state = PARSE_DEPENDENCIES;
 

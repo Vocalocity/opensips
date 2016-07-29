@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * dialog module - basic support for dialog tracking
  *
  * Copyright (C) 2009 Voice Sistem SRL
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -105,7 +103,11 @@ int store_dlg_value_unsafe(struct dlg_cell *dlg, str *name, str *val)
 		}
 	}
 
-	/* not found -> simply add a new one */
+	/* not found */
+	if (val==NULL)
+		return 0;
+
+	/* has value ? -> simply add a new one */
 
 	/* insert at the beginning of the list */
 	dv->next = dlg->vals;
@@ -205,7 +207,7 @@ int check_dlg_value_unsafe(struct dlg_cell *dlg, str *name, str *val)
 		if (id==dv->id && name->len==dv->name.len &&
 		memcmp(name->s,dv->name.s,name->len)==0 ) {
 			LM_DBG("var found with val <%.*s>!\n",dv->val.len,dv->val.s);
-			if ( val->len==dv->val.len && 
+			if ( val->len==dv->val.len &&
 			memcmp(val->s,dv->val.s,val->len)==0) {
 				LM_DBG("var found!\n");
 				return 0;

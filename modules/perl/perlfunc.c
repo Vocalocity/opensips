@@ -1,9 +1,7 @@
 /*
- * $Id$
- *
  * Perl module for OpenSIPS
  *
- * Copyright (C) 2006 Collax GmbH 
+ * Copyright (C) 2006 Collax GmbH
  *                    (Bastian Friedrich <bastian.friedrich@collax.com>)
  *
  * This file is part of opensips, a free SIP server.
@@ -20,7 +18,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  */
 
@@ -53,7 +51,7 @@ int perl_checkfnc(char *fnc) {
 }
 
 /*
- * Run function without paramters
+ * Run function without parameters
  */
 
 int perl_exec_simple(char* fnc, char* args[], int flags) {
@@ -106,7 +104,7 @@ int perl_exec2(struct sip_msg* _msg, char* fnc, char* mystr) {
 		}
 		return -1;
 	}
-	
+
 	switch ((_msg->first_line).type) {
 	case SIP_REQUEST:
 		if (parse_sip_msg_uri(_msg) < 0) {

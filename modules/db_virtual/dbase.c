@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2009 Voice Sistem SRL
  * Copyright (C) 2009 Razvan
  *
@@ -18,7 +16,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -51,7 +49,7 @@
     dbb->last_inserted_id   0           0
     dbb->insert_update      1           1
  *
- * Explanation: 
+ * Explanation:
  * it makes sense to insert in multiple dbs
  * but not to query and fetch from multiple dbs.
  *
@@ -101,7 +99,7 @@ void try_reconnect(handle_set_t * p){
 
     int i;
     //handle_set_t * p = (handle_set_t*)_h->tail;//private_handles;
-    
+
     for(i=0; i< global->set_list[p->set_index].size; i++){
         if(!(p->con_list[i].flags & CAN_USE) &&
                 global->set_list[p->set_index].db_list[i].flags & CAN_USE){
@@ -272,9 +270,9 @@ do{                                                                             
 db_con_t* db_virtual_init(const str* _set_url)
 {
 /*
-    find set_url in globla state
+    find set_url in global state
     get index
-    alocate
+    allocate
     populate with db_init
 */
     LM_DBG("INIT set_name, %.*s\n", _set_url->len, _set_url->s);
@@ -285,7 +283,7 @@ db_con_t* db_virtual_init(const str* _set_url)
     char buffer[256];
     char * token;
     handle_set_t* p;
-    
+
     if(!_set_url || !_set_url->s){
         LM_ERR("url or url.s NULL\n");
         return NULL;
@@ -303,7 +301,7 @@ db_con_t* db_virtual_init(const str* _set_url)
         return NULL;
     }
 
-    
+
 
     /* find set_name in global */
     memset(buffer, 0, 256);
@@ -328,7 +326,7 @@ db_con_t* db_virtual_init(const str* _set_url)
 	return NULL;
     }
 
-    
+
     p = &private->hset_list[index];
 
     /* alocat res */
@@ -446,7 +444,7 @@ int db_virtual_use_table(db_con_t* _h, const str* _t)
 
     memcpy(use_table.s, _t->s, _t->len);
 
-    
+
     return rc2;
 }
 

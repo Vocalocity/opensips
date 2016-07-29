@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * sl module
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -110,9 +108,12 @@ struct module_exports sl_exports = {
 struct module_exports exports= {
 #endif
 	"sl",         /* module's name */
+	MOD_TYPE_DEFAULT,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	NULL,            /* OpenSIPS module dependencies */
 	cmds,         /* exported functions */
+	NULL,         /* exported async functions */
 	mod_params,   /* param exports */
 	mod_stats,    /* exported statistics */
 	0,            /* exported MI functions */
@@ -232,7 +233,7 @@ static int w_sl_send_reply(struct sip_msg* msg, char* str1, char* str2)
 	} else {
 		code_i = ((pv_elem_p)str1)->spec.pvp.pvn.u.isname.name.n;
 	}
-	
+
 	if(((pv_elem_p)str2)->spec.getf!=NULL)
 	{
 		if(pv_printf_s(msg, (pv_elem_p)str2, &code_s)!=0 || code_s.len <=0)

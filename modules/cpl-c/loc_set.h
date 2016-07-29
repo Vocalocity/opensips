@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
 
@@ -69,7 +67,7 @@ static inline int add_location(struct location **loc_set, str *uri,
 	if(received && received->s && received->len)
 		loc = (struct location*)shm_malloc(sizeof(struct location)+
 				((flags&CPL_LOC_DUPL)?uri->len+1+received->len+1:0) );
-	else 
+	else
 		loc = (struct location*)shm_malloc(
 			sizeof(struct location)+((flags&CPL_LOC_DUPL)?uri->len+1:0) );
 	if (!loc) {

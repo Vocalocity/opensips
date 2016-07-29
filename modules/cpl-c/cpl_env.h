@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2001-2003 FhG Fokus
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * --------
@@ -45,8 +43,6 @@ struct cpl_enviroment {
                              * used only by run_time_switch */
 	udomain_t*  lu_domain;  /* domain used for lookup */
 	int lu_append_branches; /* how many branches lookup should add */
-	int timer_avp_type;     /* specs - type and name - of the timer AVP */
-	int timer_avp;
 	int use_domain;
 };
 

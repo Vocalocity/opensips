@@ -1,6 +1,4 @@
 /*
- * $Id$
- * 
  * Accounting module logic
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -20,7 +18,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * -------
@@ -54,6 +52,8 @@ extern struct tm_binds tmb;
 extern struct rr_binds rrb;
 extern str flags_str;
 extern str table_str;
+
+extern int acc_created_avp_id;
 
 struct acc_enviroment acc_env;
 
@@ -158,6 +158,11 @@ static inline void env_set_comment(struct acc_param *accp)
 	acc_env.reason = accp->reason;
 }
 
+static inline void env_set_event(event_id_t ev)
+{
+	acc_env.event = ev;
+}
+
 
 static inline int acc_preparse_req(struct sip_msg *req)
 {
@@ -183,7 +188,7 @@ int w_acc_log_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
 	env_set_to( rq->to );
 	env_set_comment( &accp );
 	env_set_text( ACC_REQUEST, ACC_REQUEST_LEN);
-	return acc_log_request( rq, NULL);
+	return acc_log_request( rq, NULL, 0);
 }
 
 
@@ -203,14 +208,14 @@ int w_acc_aaa_request(struct sip_msg *rq, pv_elem_t* comment, char* foo)
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
-	return acc_aaa_request( rq, NULL);
+	return acc_aaa_request( rq, NULL, 0);
 }
 
 
 int w_acc_db_request(struct sip_msg *rq, pv_elem_t* comment, char *table)
 {
 	struct acc_param accp;
-	int table_len = strlen(table);
+	int table_len;
 
 	if (!table) {
 		LM_ERR("db support not configured\n");
@@ -220,21 +225,23 @@ int w_acc_db_request(struct sip_msg *rq, pv_elem_t* comment, char *table)
 	if (acc_preparse_req(rq)<0)
 		return -1;
 
+	table_len = strlen(table);
+
 	acc_pvel_to_acc_param(rq, comment, &accp);
 
 	env_set_to( rq->to );
 	env_set_comment( &accp );
-	env_set_text(table, strlen(table));
+	env_set_text(table, table_len);
 
 	if (table_len == db_table_mc.len && (strncmp(table, db_table_mc.s, table_len) == 0)) {
-		return acc_db_request(rq, NULL, &mc_ins_list);
+		return acc_db_request(rq, NULL, &mc_ins_list, 0);
 	}
 
 	if (table_len == db_table_acc.len && (strncmp(table, db_table_acc.s, table_len) == 0)) {
-		return acc_db_request(rq, NULL, &acc_ins_list);
+		return acc_db_request(rq, NULL, &acc_ins_list, 0);
 	}
 
-	return acc_db_request( rq, NULL,NULL);
+	return acc_db_request( rq, NULL,NULL, 0);
 }
 
 #ifdef DIAM_ACC
@@ -265,7 +272,18 @@ int w_acc_evi_request(struct sip_msg *rq, pv_elem_t* comment, char *foo)
 	env_set_to( rq->to );
 	env_set_comment( &accp );
 
-	return acc_evi_request( rq, NULL);
+	if (is_cdr_acc_on(rq) && is_evi_acc_on(rq)) {
+		env_set_event(acc_cdr_event);
+	} else if (is_evi_acc_on(rq) && acc_env.code < 300) {
+		env_set_event(acc_event);
+	} else if (is_evi_mc_on(rq)) {
+		env_set_event(acc_missed_event);
+	} else {
+		LM_WARN("evi request flags not set\n");
+		return 1;
+	}
+
+	return acc_evi_request( rq, NULL, 0);
 }
 
 int acc_pvel_to_acc_param(struct sip_msg* rq, pv_elem_t* pv_el, struct acc_param* accp)
@@ -322,6 +340,7 @@ void acc_onreq( struct cell* t, int type, struct tmcb_params *ps )
 {
 	int tmcb_types;
 	int is_invite;
+	int_str _avp_created_value;
 
 	if ( ps->req && !skip_cancel(ps->req) &&
 	(is_acc_on(ps->req) || is_mc_on(ps->req)) ) {
@@ -340,6 +359,13 @@ void acc_onreq( struct cell* t, int type, struct tmcb_params *ps )
 
 		/* if cdr accounting is enabled */
 		if (is_cdr_acc_on(ps->req) && !has_totag(ps->req)) {
+			_avp_created_value.n = time(NULL);
+
+			if ( add_avp(0, acc_created_avp_id, _avp_created_value) != 0) {
+				LM_ERR("failed to add created avp value!\n");
+				return;
+			}
+
 			if (is_invite && create_acc_dlg(ps->req) < 0) {
 				LM_ERR("cannot use dialog accounting module\n");
 				return;
@@ -363,7 +389,7 @@ void acc_onreq( struct cell* t, int type, struct tmcb_params *ps )
 static inline int should_acc_reply(struct sip_msg *req,struct sip_msg *rpl,
 																	int code)
 {
-	/* negative transactions reported otherwise only if explicitly 
+	/* negative transactions reported otherwise only if explicitly
 	 * demanded */
 	if ( !is_failed_acc_on(req) && code >=300 )
 		return 0;
@@ -416,28 +442,29 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 
 	/* we report on missed calls when the first
 	 * forwarding attempt fails; we do not wish to
-	 * report on every attempt; so we clear the flags; 
+	 * report on every attempt; so we clear the flags;
 	 */
 
 	if (is_evi_mc_on(req)) {
-		acc_evi_request( req, reply );
+		env_set_event(acc_missed_event);
+		acc_evi_request( req, reply, is_cdr_acc_on(req) );
 		flags_to_reset |= evi_missed_flag;
 	}
 
 	if (is_log_mc_on(req)) {
 		env_set_text( ACC_MISSED, ACC_MISSED_LEN);
-		acc_log_request( req, reply );
+		acc_log_request( req, reply, is_cdr_acc_on(req) );
 		flags_to_reset |= log_missed_flag;
 	}
 
 	if (is_aaa_mc_on(req)) {
-		acc_aaa_request( req, reply );
+		acc_aaa_request( req, reply, is_cdr_acc_on(req) );
 		flags_to_reset |= aaa_missed_flag;
 	}
 
 	if (is_db_mc_on(req)) {
 		env_set_text(db_table_mc.s, db_table_mc.len);
-		acc_db_request( req, reply,&mc_ins_list);
+		acc_db_request( req, reply,&mc_ins_list, is_cdr_acc_on(req));
 		flags_to_reset |= db_missed_flag;
 	}
 /* DIAMETER */
@@ -454,7 +481,7 @@ static inline void on_missed(struct cell *t, struct sip_msg *req,
 	 */
 	reset_acc_flag( req, flags_to_reset );
 
-	if (new_uri_bk.s) {
+	if (t->nr_of_outgoings) {
 		req->new_uri = new_uri_bk;
 		req->dst_uri = dst_uri_bk;
 		req->parsed_uri_ok = 0;
@@ -477,7 +504,7 @@ void acc_loaded_callback(struct dlg_cell *dlg, int type,
 			LM_DBG("flags were not saved in dialog\n");
 			return;
 		}
-		flags_l = (unsigned int)*flags_s.s;
+		flags_l = flag_list_to_bitmask(&flags_s, FLAG_TYPE_MSG, FLAG_DELIM);
 
 		/* register database callbacks */
 		if (dlg_api.register_dlgcb(dlg, DLGCB_TERMINATED |
@@ -566,16 +593,15 @@ static inline void acc_onreply( struct cell* t, struct sip_msg *req,
 			return;
 		}
 
-		flags_s.s = (char*)&req->flags;
-		flags_s.len = sizeof(unsigned int);
-		
-		/* store flags into dlg */ 
+		flags_s = bitmask_to_flag_list(FLAG_TYPE_MSG, req->flags);
+
+		/* store flags into dlg */
 		if ( dlg_api.store_dlg_value(dlg, &flags_str, &flags_s) < 0) {
 			LM_ERR("cannot store flag value into dialog\n");
 			return;
 		}
 
-		/* store flags into dlg */ 
+		/* store flags into dlg */
 		if ( dlg_api.store_dlg_value(dlg, &table_str, &table.s) < 0) {
 			LM_ERR("cannot store the table name into dialog\n");
 			return;
@@ -588,20 +614,22 @@ static inline void acc_onreply( struct cell* t, struct sip_msg *req,
 		}
 	} else {
 		/* do old accounting */
-		if ( is_evi_acc_on(req) )
-			acc_evi_request( req, reply );
+		if ( is_evi_acc_on(req) ) {
+			env_set_event(acc_event);
+			acc_evi_request( req, reply, 0 );
+		}
 
 		if ( is_log_acc_on(req) ) {
 			env_set_text( ACC_ANSWERED, ACC_ANSWERED_LEN);
-			acc_log_request( req, reply );
+			acc_log_request( req, reply, 0 );
 		}
 
 		if (is_aaa_acc_on(req))
-			acc_aaa_request( req, reply );
-	
+			acc_aaa_request( req, reply, 0 );
+
 		if (is_db_acc_on(req)) {
 			env_set_text( table.s.s, table.s.len);
-			acc_db_request( req, reply, &acc_ins_list);
+			acc_db_request( req, reply, &acc_ins_list, 0);
 		}
 	}
 
@@ -630,7 +658,7 @@ static void acc_dlg_callback(struct dlg_cell *dlg, int type,
 	flags = (unsigned int)(long)(*_params->param);
 
 	if (flags & evi_flag) {
-
+		env_set_event(acc_cdr_event);
 		if (acc_evi_cdrs(dlg, _params->msg) < 0) {
 			LM_ERR("cannot send accounting events\n");
 			return;

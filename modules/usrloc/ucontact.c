@@ -1,6 +1,4 @@
-/* 
- * $Id$ 
- *
+/*
  * Usrloc contact structure
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -17,9 +15,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History:
  * ---------
@@ -35,6 +33,8 @@
 
 #include "ucontact.h"
 #include <string.h>             /* memcpy */
+#include "../../parser/parse_uri.h"
+#include "../../parser/parse_rr.h"
 #include "../../mem/shm_mem.h"
 #include "../../ut.h"
 #include "../../ip_addr.h"
@@ -46,6 +46,47 @@
 #include "ul_callback.h"
 #include "urecord.h"
 #include "ucontact.h"
+#include "ureplication.h"
+#include "udomain.h"
+
+extern event_id_t ei_c_update_id;
+
+/*
+ * Determines the IP address of the next hop on the way to given contact based
+ * on following URIs: path URI -> received URI -> contact URI
+ *
+ * @contact:     input/output param; results are written in contact->next_hop
+ */
+static int compute_next_hop(ucontact_t *contact)
+{
+	str uri = {0,0};
+	struct sip_uri puri;
+
+	if (contact->path.s && contact->path.len > 0) {
+		if (get_path_dst_uri(&contact->path, &uri) < 0) {
+			LM_ERR("failed to get dst_uri for Path '%.*s'\n",
+			        contact->path.len, contact->path.s);
+			return -1;
+		}
+
+	} else if (contact->received.s && contact->received.len > 0)
+		uri = contact->received;
+	else if (contact->c.s && contact->c.len > 0)
+		uri = contact->c;
+
+	if (parse_uri(uri.s, uri.len, &puri) < 0) {
+		LM_ERR("failed to parse URI of next hop: '%.*s'\n", uri.len, uri.s);
+		return -1;
+	}
+
+	memset(&contact->next_hop, 0, sizeof contact->next_hop);
+
+	contact->next_hop.port  = puri.port_no;
+	contact->next_hop.proto = puri.proto;
+	contact->next_hop.name  = puri.host;
+
+	return 0;
+}
 
 
 /*! \brief
@@ -53,33 +94,42 @@
  */
 ucontact_t* new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 {
+	struct sip_uri tmp_uri;
+
 	ucontact_t *c;
 
 	c = (ucontact_t*)shm_malloc(sizeof(ucontact_t));
 	if (!c) {
 		LM_ERR("no more shm memory\n");
-		return 0;
+		return NULL;
 	}
 	memset(c, 0, sizeof(ucontact_t));
 
-	if (shm_str_dup( &c->c, _contact) < 0) goto error;
-	if (shm_str_dup( &c->callid, _ci->callid) < 0) goto error;
-	if (shm_str_dup( &c->user_agent, _ci->user_agent) < 0) goto error;
+	if (parse_uri(_contact->s, _contact->len, &tmp_uri) < 0) {
+		LM_ERR("contact [%.*s] is not valid! Will not store it!\n",
+			  _contact->len, _contact->s);
+		shm_free(c);
+		return NULL;
+	}
+
+	if (shm_str_dup( &c->c, _contact) < 0) goto mem_error;
+	if (shm_str_dup( &c->callid, _ci->callid) < 0) goto mem_error;
+	if (shm_str_dup( &c->user_agent, _ci->user_agent) < 0) goto mem_error;
 
 	if (_ci->received.s && _ci->received.len) {
-		if (shm_str_dup( &c->received, &_ci->received) < 0) goto error;
+		if (shm_str_dup( &c->received, &_ci->received) < 0) goto mem_error;
 	}
 
 	if (_ci->instance.s && _ci->instance.len) {
-		if (shm_str_dup( &c->instance, &_ci->instance) < 0) goto error;
+		if (shm_str_dup( &c->instance, &_ci->instance) < 0) goto mem_error;
 	}
 
 	if (_ci->path && _ci->path->len) {
-		if (shm_str_dup( &c->path, _ci->path) < 0) goto error;
+		if (shm_str_dup( &c->path, _ci->path) < 0) goto mem_error;
 	}
 
 	if (_ci->attr && _ci->attr->len) {
-		if (shm_str_dup( &c->attr, _ci->attr) < 0) goto error;
+		if (shm_str_dup( &c->attr, _ci->attr) < 0) goto mem_error;
 	}
 
 	c->domain = _dom;
@@ -94,9 +144,17 @@ ucontact_t* new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _
 	c->methods = _ci->methods;
 	c->last_modified = _ci->last_modified;
 
+	if (compute_next_hop(c) != 0) {
+		LM_ERR("failed to resolve next hop\n");
+		goto out_free;
+	}
+
 	return c;
-error:
+
+mem_error:
 	LM_ERR("no more shm memory\n");
+
+out_free:
 	if (c->path.s) shm_free(c->path.s);
 	if (c->received.s) shm_free(c->received.s);
 	if (c->user_agent.s) shm_free(c->user_agent.s);
@@ -105,7 +163,7 @@ error:
 	if (c->instance.s) shm_free(c->instance.s);
 	if (c->attr.s) shm_free(c->attr.s);
 	shm_free(c);
-	return 0;
+	return NULL;
 }
 
 
@@ -207,8 +265,11 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 
 	char* ptr;
 
-	/* No need to update Callid as it is constant 
-	 * per ucontact (set at insert time)  -bogdan */
+	/* RFC 3261 states 'All registrations from a UAC SHOULD use
+	 * the same Call-ID header field value for registrations sent
+	 * to a particular registrar.', but it is not a 'MUST'. So
+	 * always update the call ID to be safe. */
+	update_str( &_c->callid, _ci->callid);
 
 	update_str( &_c->user_agent, _ci->user_agent);
 
@@ -219,7 +280,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 		_c->received.s = 0;
 		_c->received.len = 0;
 	}
-	
+
 	if (_ci->path) {
 		update_str( &_c->path, _ci->path);
 	} else {
@@ -245,6 +306,13 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	_c->flags = _ci->flags;
 	_c->cflags = _ci->cflags;
 
+	if (compute_next_hop(_c) != 0)
+		LM_ERR("failed to resolve next hop. keeping old one - '%.*s'\n",
+		        _c->next_hop.name.len, _c->next_hop.name.s);
+
+	ul_raise_contact_event(ei_c_update_id, &_c->c, &_c->callid,
+			&_c->received, _c->aor, _c->cseq);
+
 	return 0;
 }
 
@@ -266,9 +334,9 @@ void st_update_ucontact(ucontact_t* _c)
 		break;
 
 	case CS_SYNC:
-			 /* For db mode 1 & 2 a modified contact needs to be 
-			  * updated also in the database, so transit into 
-			  * CS_DIRTY and let the timer to do the update 
+			 /* For db mode 1 & 2 a modified contact needs to be
+			  * updated also in the database, so transit into
+			  * CS_DIRTY and let the timer to do the update
 			  * again. For db mode 1 we try to update right
 			  * now and if fails, let the timer to do the job
 			  */
@@ -304,10 +372,10 @@ int st_delete_ucontact(ucontact_t* _c)
 	case CS_SYNC:
 	case CS_DIRTY:
 		     /* Contact is in the database,
-		      * we cannot remove it from the memory 
+		      * we cannot remove it from the memory
 		      * directly, but we can set expires to zero
-		      * and the timer will take care of deleting 
-		      * the contact from the memory as well as 
+		      * and the timer will take care of deleting
+		      * the contact from the memory as well as
 		      * from the database
 		      */
 		if (db_mode == WRITE_BACK) {
@@ -329,7 +397,7 @@ int st_delete_ucontact(ucontact_t* _c)
 
 /*! \brief
  * Called when the timer is about to delete
- * an expired contact. 
+ * an expired contact.
  * \return 1 if the contact should be removed from
  * the database and 0 otherwise
  */
@@ -434,7 +502,7 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 
 	vals[1].type = DB_STR;
 	vals[1].nul = 0;
-	vals[1].val.str_val.s = _c->c.s; 
+	vals[1].val.str_val.s = _c->c.s;
 	vals[1].val.str_val.len = _c->c.len;
 
 	vals[2].type = DB_DATETIME;
@@ -461,7 +529,6 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 	vals[7].type = DB_STR;
 	vals[7].nul = 0;
 	vals[7].val.str_val = bitmask_to_flag_list(FLAG_TYPE_BRANCH, _c->cflags);
-	vals[7].val.str_val.len = vals[7].val.str_val.len;
 
 	vals[8].type = DB_STR;
 	vals[8].nul = 0;
@@ -476,7 +543,7 @@ int db_insert_ucontact(ucontact_t* _c,query_list_t **ins_list, int update)
 		vals[9].val.str_val.s = _c->received.s;
 		vals[9].val.str_val.len = _c->received.len;
 	}
-	
+
 	vals[10].type = DB_STR;
 	if (_c->path.s == 0) {
 		vals[10].nul = 1;
@@ -580,18 +647,43 @@ int db_update_ucontact(ucontact_t* _c)
 	char* dom;
 	db_key_t keys1[4];
 	db_val_t vals1[4];
-
-	db_key_t keys2[12];
-	db_val_t vals2[12];
+	db_key_t keys2[13];
+	db_val_t vals2[13];
+	int keys1_no;
+	int keys2_no;
 
 	if (_c->flags & FL_MEM) {
 		return 0;
 	}
 
-	keys1[0] = &user_col;
-	keys1[1] = &contact_col;
-	keys1[2] = &callid_col;
-	keys1[3] = &domain_col;
+	keys1[0] = &contact_col;
+	vals1[0].type = DB_STR;
+	vals1[0].nul = 0;
+	vals1[0].val.str_val = _c->c;
+
+	keys1[1] = &user_col;
+	vals1[1].type = DB_STR;
+	vals1[1].nul = 0;
+	vals1[1].val.str_val = *_c->aor;
+
+	if (use_domain) {
+		keys1[2] = &domain_col;
+		vals1[2].type = DB_STR;
+		vals1[2].nul = 0;
+		dom = q_memchr(_c->aor->s, '@', _c->aor->len);
+		if (dom==0) {
+			vals1[1].val.str_val.len = 0;
+			vals1[2].val.str_val = *_c->aor;
+		} else {
+			vals1[1].val.str_val.len = dom - _c->aor->s;
+			vals1[2].val.str_val.s = dom + 1;
+			vals1[2].val.str_val.len = _c->aor->s + _c->aor->len - dom - 1;
+		}
+		keys1_no = 3;
+	} else {
+		keys1_no = 2;
+	}
+
 	keys2[0] = &expires_col;
 	keys2[1] = &q_col;
 	keys2[2] = &cseq_col;
@@ -604,18 +696,6 @@ int db_update_ucontact(ucontact_t* _c)
 	keys2[9] = &methods_col;
 	keys2[10] = &last_mod_col;
 	keys2[11] = &attr_col;
-
-	vals1[0].type = DB_STR;
-	vals1[0].nul = 0;
-	vals1[0].val.str_val = *_c->aor;
-
-	vals1[1].type = DB_STR;
-	vals1[1].nul = 0;
-	vals1[1].val.str_val = _c->c;
-
-	vals1[2].type = DB_STR;
-	vals1[2].nul = 0;
-	vals1[2].val.str_val = _c->callid;
 
 	vals2[0].type = DB_DATETIME;
 	vals2[0].nul = 0;
@@ -633,9 +713,9 @@ int db_update_ucontact(ucontact_t* _c)
 	vals2[3].nul = 0;
 	vals2[3].val.bitmap_val = _c->flags;
 
-	vals2[4].type = DB_BITMAP;
+	vals2[4].type = DB_STR;
 	vals2[4].nul = 0;
-	vals2[4].val.bitmap_val = _c->cflags;
+	vals2[4].val.str_val = bitmask_to_flag_list(FLAG_TYPE_BRANCH, _c->cflags);
 
 	vals2[5].type = DB_STR;
 	vals2[5].nul = 0;
@@ -648,7 +728,7 @@ int db_update_ucontact(ucontact_t* _c)
 		vals2[6].nul = 0;
 		vals2[6].val.str_val = _c->received;
 	}
-	
+
 	vals2[7].type = DB_STR;
 	if (_c->path.s == 0) {
 		vals2[7].nul = 1;
@@ -685,19 +765,22 @@ int db_update_ucontact(ucontact_t* _c)
 		vals2[11].nul = 0;
 		vals2[11].val.str_val = _c->attr;
 	}
+	keys2_no = 12;
 
-	if (use_domain) {
-		vals1[3].type = DB_STR;
-		vals1[3].nul = 0;
-		dom = q_memchr(_c->aor->s, '@', _c->aor->len);
-		if (dom==0) {
-			vals1[0].val.str_val.len = 0;
-			vals1[3].val.str_val = *_c->aor;
-		} else {
-			vals1[0].val.str_val.len = dom - _c->aor->s;
-			vals1[3].val.str_val.s = dom + 1;
-			vals1[3].val.str_val.len = _c->aor->s + _c->aor->len - dom - 1;
-		}
+	if (matching_mode==CONTACT_CALLID) {
+		/* callid is part of the matching key */
+		keys1[keys1_no] = &callid_col;
+		vals1[keys1_no].type = DB_STR;
+		vals1[keys1_no].nul = 0;
+		vals1[keys1_no].val.str_val = _c->callid;
+		keys1_no++;
+	} else {
+		/* callid is part of the update */
+		keys2[keys2_no] = &callid_col;
+		vals2[keys2_no].type = DB_STR;
+		vals2[keys2_no].nul = 0;
+		vals2[keys2_no].val.str_val = _c->callid;
+		keys2_no++;
 	}
 
 	if (ul_dbf.use_table(ul_dbh, _c->domain) < 0) {
@@ -707,8 +790,8 @@ int db_update_ucontact(ucontact_t* _c)
 
 	CON_PS_REFERENCE(ul_dbh) = &my_ps;
 
-	if (ul_dbf.update(ul_dbh, keys1, 0, vals1, keys2, vals2, 
-	(use_domain) ? (4) : (3), 12) < 0) {
+	if (ul_dbf.update(ul_dbh, keys1, 0, vals1, keys2, vals2,
+	keys1_no, keys2_no) < 0) {
 		LM_ERR("updating database failed\n");
 		return -1;
 	}
@@ -726,6 +809,7 @@ int db_delete_ucontact(ucontact_t* _c)
 	char* dom;
 	db_key_t keys[4];
 	db_val_t vals[4];
+	int n;
 
 	if (_c->flags & FL_MEM) {
 		return 0;
@@ -733,8 +817,6 @@ int db_delete_ucontact(ucontact_t* _c)
 
 	keys[0] = &user_col;
 	keys[1] = &contact_col;
-	keys[2] = &callid_col;
-	keys[3] = &domain_col;
 
 	vals[0].type = DB_STR;
 	vals[0].nul = 0;
@@ -744,22 +826,30 @@ int db_delete_ucontact(ucontact_t* _c)
 	vals[1].nul = 0;
 	vals[1].val.str_val = _c->c;
 
-	vals[2].type = DB_STR;
-	vals[2].nul = 0;
-	vals[2].val.str_val = _c->callid;
+	n = 2;
+
+	if (matching_mode==CONTACT_CALLID) {
+		vals[n].type = DB_STR;
+		vals[n].nul = 0;
+		vals[n].val.str_val = _c->callid;
+
+		keys[n++] = &callid_col;
+	}
 
 	if (use_domain) {
-		vals[3].type = DB_STR;
-		vals[3].nul = 0;
+		vals[n].type = DB_STR;
+		vals[n].nul = 0;
 		dom = q_memchr(_c->aor->s, '@', _c->aor->len);
 		if (dom==0) {
 			vals[0].val.str_val.len = 0;
-			vals[3].val.str_val = *_c->aor;
+			vals[n].val.str_val = *_c->aor;
 		} else {
 			vals[0].val.str_val.len = dom - _c->aor->s;
-			vals[3].val.str_val.s = dom + 1;
-			vals[3].val.str_val.len = _c->aor->s + _c->aor->len - dom - 1;
+			vals[n].val.str_val.s = dom + 1;
+			vals[n].val.str_val.len = _c->aor->s + _c->aor->len - dom - 1;
 		}
+
+		keys[n++] = &domain_col;
 	}
 
 	if (ul_dbf.use_table(ul_dbh, _c->domain) < 0) {
@@ -769,7 +859,7 @@ int db_delete_ucontact(ucontact_t* _c)
 
 	CON_PS_REFERENCE(ul_dbh) = &my_ps;
 
-	if (ul_dbf.delete(ul_dbh, keys, 0, vals, (use_domain) ? (4) : (3)) < 0) {
+	if (ul_dbf.delete(ul_dbh, keys, 0, vals, n) < 0) {
 		LM_ERR("deleting from database failed\n");
 		return -1;
 	}
@@ -843,7 +933,8 @@ static inline void update_contact_pos(struct urecord* _r, ucontact_t* _c)
 /*! \brief
  * Update ucontact with new values
  */
-int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci)
+int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci,
+                    char is_replicated)
 {
 	int ret;
 
@@ -853,6 +944,9 @@ int update_ucontact(struct urecord* _r, ucontact_t* _c, ucontact_info_t* _ci)
 		LM_ERR("failed to update memory\n");
 		return -1;
 	}
+
+	if (!is_replicated && replication_dests && db_mode != DB_ONLY)
+		replicate_ucontact_update(_r, &_c->c, _ci);
 
 	/* run callbacks for UPDATE event */
 	if (exists_ulcb_type(UL_CONTACT_UPDATE))

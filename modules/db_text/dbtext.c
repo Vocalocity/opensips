@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * DBText module interface
  *
  * Copyright (C) 2001-2003 FhG Fokus
@@ -17,16 +15,16 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ *
  * History:
  * --------
  * 2003-01-30 created by Daniel
  * 2003-03-11 New module interface (janakj)
  * 2003-03-16 flags export parameter added (janakj)
- * 
+ *
  */
 
 #include <stdio.h>
@@ -76,11 +74,14 @@ static mi_export_t mi_cmds[] = {
 	{0,          0,           0, 0, 0, 0}
 };
 
-struct module_exports exports = {	
+struct module_exports exports = {
 	"db_text",
+	MOD_TYPE_SQLDB,/* class of this module */
 	MODULE_VERSION,
 	DEFAULT_DLFLAGS, /* dlopen flags */
+	NULL,            /* OpenSIPS module dependencies */
 	cmds,     /* Exported functions */
+	NULL,     /* Exported async functions */
 	params,   /* Exported parameters */
 	NULL,     /* exported statistics */
 	mi_cmds,  /* exported MI functions */
@@ -98,7 +99,7 @@ static int mod_init(void)
 	if(dbt_init_cache())
 		return -1;
 	/* return make_demo(); */
-	
+
 	return 0;
 }
 
@@ -124,7 +125,7 @@ int dbt_bind_api(const str* mod, db_func_t *dbb)
 	dbb->query       = (db_query_f)dbt_query;
 	dbb->free_result = dbt_free_result;
 	dbb->insert      = (db_insert_f)dbt_insert;
-	dbb->delete      = (db_delete_f)dbt_delete; 
+	dbb->delete      = (db_delete_f)dbt_delete;
 	dbb->update      = (db_update_f)dbt_update;
 
 	return 0;
@@ -136,7 +137,9 @@ static struct mi_root* mi_dbt_dump(struct mi_root* cmd, void* param)
 
 	rpl_tree = init_mi_tree( 200, MI_OK_S, MI_OK_LEN);
 	if (rpl_tree==NULL) return NULL;
-	if (dbt_cache_print(0)!=0)
+	if (dbt_cache_print(0)!=0) {
+		free_mi_tree(rpl_tree);
 		return NULL;
+	}
 	return rpl_tree;
 }
