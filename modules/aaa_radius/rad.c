@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2009 Irina Stanescu
  * Copyright (C) 2009 Voice System
  *
@@ -16,9 +14,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
- * along with this program; if not, write to the Free Software 
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  *
  * History
  * --------
@@ -54,7 +52,7 @@
 
 	For Radius, initialization consists of:
 	- the url is parsed and a configuration structure is obtained
-	- the rest field from the configuration structure is, for the radius 
+	- the rest field from the configuration structure is, for the radius
 	module, a string for the path of the radius configuration file
 	- obtain the connection handle
 	- initialize the dictionary
@@ -152,7 +150,7 @@ int extract_avp(VALUE_PAIR* vp) {
 	unsigned short flags = 0;
 
 	/* empty? */
-	if (vp->lvalue == 0 || vp->strvalue == 0)
+	if (vp->lvalue == 0)
 		return -1;
 
 	p = vp->strvalue;
@@ -269,7 +267,7 @@ int rad_send_message(aaa_conn* rh, aaa_message* request, aaa_message** reply) {
 				return -1;
 			}
 		} else if (result == REJECT_RC) {
-			LM_DBG("rc_auth function succeded with result REJECT_RC\n");
+			LM_DBG("rc_auth function succeeded with result REJECT_RC\n");
 			return result;
 		} else {
 			LM_ERR("rc_auth function failed\n");
@@ -292,7 +290,7 @@ int rad_send_message(aaa_conn* rh, aaa_message* request, aaa_message** reply) {
 	The return value is:
 	0, if the name is found
 	1, if the name isn't found
-	-1, if an error occured
+	-1, if an error occurred
  */
 int rad_find(aaa_conn* rh, aaa_map *map, int flag) {
 

@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * Copyright (C) 2004-2006 Voice Sistem SRL
  *
  * This file is part of opensips, a free SIP server.
@@ -17,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  *
  * History:
@@ -63,24 +61,8 @@ void init_acc_extra(void)
 	int i;
 	/* ugly trick to get the address of the static buffer */
 	static_detector[0] = int2str( (unsigned long)3, &i) + i;
-	if (udp_listen) {
-		static_detector[1] = ip_addr2a(&udp_listen->address);
-#ifdef USE_TCP
-	} else if (tcp_listen) {
-		static_detector[1] = ip_addr2a(&tcp_listen->address);
-#endif
-#ifdef USE_TLS
-	} else if (tls_listen) {
-		static_detector[1] = ip_addr2a(&tls_listen->address);
-#endif
-#ifdef USE_SCTP
-	} else if (sctp_listen) {
-		static_detector[1] = ip_addr2a(&sctp_listen->address);
-#endif
-	} else {
-		LM_CRIT("BUG - no listen interface found!!\n");
-		static_detector[1] = NULL;
-	}
+	/* remember directly the static buffer returned by ip_addr2a()*/
+	static_detector[1] = _ip_addr_A_buff;
 }
 
 
@@ -255,7 +237,7 @@ int extra2attrs( struct acc_extra *extra, aaa_map *attrs, int offset)
 }
 
 
-/* converts the name of the extra from str to integer 
+/* converts the name of the extra from str to integer
  * and stores it over str.len ; str.s is freed and made zero
  */
 int extra2int( struct acc_extra *extra, int *attrs )
@@ -286,16 +268,15 @@ int extra2strar( struct acc_extra *extra, struct sip_msg *rq,
 		LM_ERR("Invalid buffer index %d - maximum %d\n", idx, MAX_ACC_BUFS-2);
 		return 0;
 	}
-	
-	if (!rq) {
-		/* no SIP message - probably internally terminated dialog
-			just nullify everything and skip them */
+
+	if(rq == NULL) {
 		for (n=0; extra ; extra=extra->next,n++) {
 			val_arr[n].s = 0;
 			val_arr[n].len = 0;
 		}
 		return n;
 	}
+	memset(&value, 0, sizeof(pv_value_t));
 
 	for( n=0,r=0 ; extra ; extra=extra->next,n++) {
 		/* get the value */
