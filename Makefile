@@ -67,6 +67,8 @@ else
 DEFS += -I/usr/include/json
 endif
 
+DEFS += -DDBG_MALLOC -DQM_MALLOC
+
 # create the template only if the file is not yet created
 ifeq (,$(wildcard Makefile.conf))
 $(shell cp Makefile.conf.template Makefile.conf)
