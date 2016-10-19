@@ -533,7 +533,7 @@ static void run_timer_process_jif(void)
 			drift = interval - (*ijiffies - last_ticks);
 
 			/* protect against sudden time changes */
-			if (interval < 0 || drift < 0 || drift > TIMER_SYNC_TICKS) {
+			if ((signed int)interval < 0 || (signed int)drift < 0 || drift > TIMER_SYNC_TICKS) {
 				last_ts = sync_ts;
 				last_ticks = *ijiffies;
 				LM_DBG("System time changed, ignoring...\n");

@@ -78,7 +78,7 @@ int init_reactor_size(void)
 		reactor_size = pkg_mem_size * FD_MEM_PERCENT / (100*n);
 
 		if (reactor_size<lim.rlim_cur) {
-			LM_WARN("shrinking reactor size from %lu (autodetected via rlimit)"
+			LM_WARN("shrinking reactor size from %llu (autodetected via rlimit)"
 				" to %d (limited by memory of %d%% from %luMb)\n",
 				lim.rlim_cur,reactor_size,FD_MEM_PERCENT,pkg_mem_size);
 			LM_WARN("use 'open_files_limit' to enforce other limit or "
