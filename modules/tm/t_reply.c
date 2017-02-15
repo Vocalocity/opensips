@@ -896,7 +896,8 @@ static enum rps t_should_relay_response( struct cell *Trans , int new_code,
 		Trans->uac[picked_branch].proxy!=NULL ) {
 			/* is is a DNS failover scenario, according to RFC 3263 ? */
 			if (is_3263_failure(Trans)) {
-				LM_INFO("Trying DNS-based failover (last=%d, %.*s)\n", new_code, Trans->uac[picked_branch].proxy->name.len, Trans->uac[picked_branch].proxy->name.s);
+				LM_DBG("trying DNS-based failover\n");
+				/*LM_INFO("Trying DNS-based failover (last=%d, %.*s)\n", new_code, Trans->uac[picked_branch].proxy->name.len, Trans->uac[picked_branch].proxy->name.s);*/
 				/* do DNS failover -> add new branches */
 				if (do_dns_failover( Trans )!=0) {
 					/* skip the failed added branches */
