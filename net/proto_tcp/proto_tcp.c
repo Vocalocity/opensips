@@ -57,6 +57,7 @@ static struct tcp_req tcp_current_req;
 #define _tcp_common_current_req tcp_current_req
 #include "tcp_common.h"
 
+static void release_tcpconn(struct tcp_connection* c, long state, int unix_sock, int writer);
 static int tcp_write_async_req(struct tcp_connection* con,int fd);
 static int tcp_read_req(struct tcp_connection* con, int* bytes_read);
 static int tcp_conn_init(struct tcp_connection* c);
@@ -763,6 +764,30 @@ send_it:
 
 	tcp_conn_release(c, (n<len)?1:0/*pending data in async mode?*/ );
 	return n;
+}
+
+
+void release_tcpconn(struct tcp_connection* c, long state, int unix_sock,
+                     int writer)
+{
+	long response[2];
+
+	LM_DBG(" releasing con %p, state %ld, fd=%d, id=%d\n",
+			c, state, c->fd, c->id);
+	LM_DBG(" extra_data %p\n", c->extra_data);
+
+	if (!writer && c->con_req) {
+		pkg_free(c->con_req);
+		c->con_req = NULL;
+	}
+
+	/* release req & signal the parent */
+	if (c->fd!=-1) close(c->fd);
+	/* errno==EINTR, EWOULDBLOCK a.s.o todo */
+	response[0]=(long)c;
+	response[1]=state;
+	if (send_all(unix_sock, response, sizeof(response))<=0)
+		LM_ERR("send_all failed\n");
 }
 
 
