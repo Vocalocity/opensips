@@ -67,7 +67,7 @@ int init_multi_proc_support(void)
 	proc_no += bin ? bin_children : 0;
 
 	/* timer processes */
-	proc_no += 2 /* timer keeper + timer trigger */;
+	proc_no += 3 /* timer keeper + timer trigger + dedicated */;
 
 	/* count the processes requested by modules */
 	proc_no += count_module_procs();
@@ -191,6 +191,9 @@ int count_init_children(int flags)
 
 skip_listeners:
 
+	/* dedicated timer */
+ 	ret++;
+ 
 	/* count number of module procs going to be initialised */
 	for (m=modules;m;m=m->next) {
 		if (m->exports->procs==NULL)
