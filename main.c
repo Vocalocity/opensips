@@ -674,6 +674,11 @@ static int main_loop(void)
 			goto error;
 		}
 
+		/* fork for the extra timer processes */
+ 		if (start_timer_extra_processes( &chd_rank )!=0) {
+ 			LM_CRIT("cannot start timer extra process(es)\n");
+ 			goto error;
+ 		}
 		is_main=1;
 
 		udp_start_nofork();
@@ -738,6 +743,12 @@ static int main_loop(void)
 			LM_CRIT("cannot start TCP processes\n");
 			goto error;
 		}
+		
+ 		/* fork for the extra timer processes */
+ 		if (start_timer_extra_processes( &chd_rank )!=0) {
+ 			LM_CRIT("cannot start timer extra process(es)\n");
+ 			goto error;
+ 		}		
 	}
 
 	/* this is the main process -> it shouldn't send anything */
