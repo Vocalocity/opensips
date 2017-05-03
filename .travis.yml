@@ -33,7 +33,12 @@ addons:
             - libncurses5-dev
             - libjson0-dev
 <<<<<<< HEAD
+<<<<<<< HEAD
 script: FASTER=1 make exclude_modules="db_oracle osp sngtc cachedb_cassandra cachedb_couchbase cachedb_mongodb" all
+=======
+script: CC_EXTRA_OPTS=-Werror FASTER=1 NICER=0 make \
+    exclude_modules="db_oracle osp sngtc cachedb_cassandra cachedb_couchbase cachedb_mongodb" all
+>>>>>>> c5928a643f7916654f24720656667165545c874f
 =======
 script: CC_EXTRA_OPTS=-Werror FASTER=1 NICER=0 make \
     exclude_modules="db_oracle osp sngtc cachedb_cassandra cachedb_couchbase cachedb_mongodb" all
