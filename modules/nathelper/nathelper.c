@@ -747,6 +747,12 @@ fix_nated_contact_f(struct sip_msg* msg, char* str1, char* str2)
 			c->uri.s = buf + 1;
 			c->uri.len = len - 2;
 		}
+		/*
+		 * the new contact uri points to a buffer stored in the lumps; when
+		 * doing async operations, this contact header is no longer copied
+		 * thus the pointer is lost; in order to overcome this, we need to
+		 * restore the pointer every time a faked reply is built
+		 */
 		//LM_DBG("new uri is--- |%.*s|\n",c->uri.len,c->uri.s);
 	}
 
@@ -1456,7 +1462,6 @@ create_rcv_uri(str* uri, struct sip_msg* m)
 
 	port.s = int2str(m->rcv.src_port, &port.len);
 
-	/* TODO: make this dynamic based on protos */
 	switch(m->rcv.proto) {
 	case PROTO_NONE:
 	case PROTO_UDP:
@@ -1464,34 +1469,15 @@ create_rcv_uri(str* uri, struct sip_msg* m)
 		proto.len = 0;
 		break;
 
-	case PROTO_TCP:
-		proto.s = "TCP";
-		proto.len = 3;
-		break;
-
-	case PROTO_TLS:
-		proto.s = "TLS";
-		proto.len = 3;
-		break;
-
-	case PROTO_SCTP:
-		proto.s = "SCTP";
-		proto.len = 4;
-		break;
-
-	case PROTO_WS:
-		proto.s = "WS";
-		proto.len = 2;
-		break;
-
-	case PROTO_WSS:
-		proto.s = "WSS";
-		proto.len = 3;
-		break;
-
 	default:
-		LM_ERR("unknown transport protocol\n");
-		return -1;
+		if (m->rcv.proto >= PROTO_FIRST && m->rcv.proto < PROTO_LAST &&
+				protos[m->rcv.proto].id ) {
+			proto.s = protos[m->rcv.proto].name;
+			proto.len = strlen(proto.s);
+		} else {
+			LM_BUG("unknown transport protocol %d\n", m->rcv.proto);
+			return -1;
+		}
 	}
 
 	len = 4 + ip.len + 2*(m->rcv.src_ip.af==AF_INET6)+ 1 + port.len;
