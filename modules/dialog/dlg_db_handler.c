@@ -496,7 +496,6 @@ static int load_dialog_info_from_db(int dlg_hash_size)
 	struct dlg_cell *dlg;
 	str callid, from_uri, to_uri, from_tag, to_tag;
 	str cseq1,cseq2,contact1,contact2,rroute1,rroute2,mangled_fu,mangled_tu;
-	unsigned int next_id;
 	int no_rows = 10;
 	struct socket_info *caller_sock,*callee_sock;
 	int found_ended_dlgs=0;
@@ -543,7 +542,7 @@ static int load_dialog_info_from_db(int dlg_hash_size)
 			caller_sock = create_socket_info(values, 15);
 			callee_sock = create_socket_info(values, 16);
 			if (caller_sock == NULL || callee_sock == NULL) {
-				LM_ERR("Dialog in DB doesn't match any listening sockets");
+				LM_ERR("Dialog in DB doesn't match any listening sockets\n");
 				continue;
 			}
 
@@ -573,10 +572,10 @@ static int load_dialog_info_from_db(int dlg_hash_size)
 			link_dlg(dlg, 0);
 
 			dlg->h_id = hash_id;
-			next_id = d_table->entries[dlg->h_entry].next_id;
 
-			d_table->entries[dlg->h_entry].next_id =
-				(next_id <= dlg->h_id) ? (dlg->h_id+1) : next_id;
+			/* next_id follows the max value of all loaded ids */
+			if (d_table->entries[dlg->h_entry].next_id <= dlg->h_id)
+				d_table->entries[dlg->h_entry].next_id = dlg->h_id + 1;
 
 			GET_STR_VALUE(to_tag, values, 5, 1, 1);
 
@@ -859,7 +858,7 @@ int remove_dialog_from_db(struct dlg_cell * cell)
 	LM_DBG("callid was %.*s\n", cell->callid.len, cell->callid.s );
 
 	/* dialog saved */
-	run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+	run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 	return 0;
 }
@@ -901,7 +900,7 @@ int update_dialog_timeout_info(struct dlg_cell * cell)
 	}
 
 	/* dialog saved */
-	run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+	run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 	cell->flags &= ~(DLG_FLAG_CHANGED);
 
@@ -1006,7 +1005,7 @@ int update_dialog_dbinfo(struct dlg_cell * cell)
 		}
 
 		/* dialog saved */
-		run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+		run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 		cell->flags &= ~(DLG_FLAG_NEW|DLG_FLAG_CHANGED|DLG_FLAG_VP_CHANGED);
 
@@ -1046,7 +1045,7 @@ int update_dialog_dbinfo(struct dlg_cell * cell)
 		}
 
 		/* dialog saved */
-		run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+		run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 		cell->flags &= ~(DLG_FLAG_CHANGED|DLG_FLAG_VP_CHANGED);
 	} else if (cell->flags & DLG_FLAG_VP_CHANGED) {
@@ -1073,7 +1072,7 @@ int update_dialog_dbinfo(struct dlg_cell * cell)
 			goto error;
 		}
 
-		run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+		run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 		cell->flags &= ~DLG_FLAG_VP_CHANGED;
 	} else {
@@ -1225,6 +1224,13 @@ static inline void set_final_update_cols(db_val_t *vals, struct dlg_cell *cell,
 	LM_DBG("DLG vals and profiles should %s[%x:%d]\n",
 			(db_flush_vp && (cell->flags & DLG_FLAG_VP_CHANGED)) ?
 			"be saved" : "not be saved", cell->flags, db_flush_vp);
+
+	if (on_shutdown || db_flush_vp) {
+		/* it is very likely to flush the vals/profiles to DB, so trigger the
+		 * callback to see if other modules may want to add more vals/profiles
+		 before the actual writting */
+		run_dlg_callbacks( DLGCB_DB_WRITE_VP, cell, 0, DLG_DIR_NONE, NULL, 1);
+	}
 
 	if (on_shutdown || (db_flush_vp && (cell->flags & DLG_FLAG_VP_CHANGED))) {
 		if (cell->vals==NULL) {
@@ -1396,7 +1402,7 @@ void dialog_update_db(unsigned int ticks, void * param)
 					ins_done=1;
 
 				/* dialog saved */
-				run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+				run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL,1);
 
 				cell->flags &= ~(DLG_FLAG_NEW |DLG_FLAG_CHANGED|DLG_FLAG_VP_CHANGED);
 
@@ -1435,7 +1441,7 @@ void dialog_update_db(unsigned int ticks, void * param)
 				}
 
 				/* dialog saved */
-				run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+				run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL,1);
 
 				cell->flags &= ~(DLG_FLAG_CHANGED|DLG_FLAG_VP_CHANGED);
 			} else if (db_flush_vp && (cell->flags & DLG_FLAG_VP_CHANGED)) {
@@ -1454,7 +1460,7 @@ void dialog_update_db(unsigned int ticks, void * param)
 					continue;
 				}
 
-				run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+				run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL,1);
 
 				cell->flags &= ~DLG_FLAG_VP_CHANGED;
 			}
@@ -1484,7 +1490,7 @@ static int sync_dlg_db_mem(void)
 	db_row_t * rows;
 	struct dlg_entry *d_entry;
 	struct dlg_cell *it,*known_dlg,*dlg=NULL;
-	int i, nr_rows,callee_leg_idx,next_id,db_timeout;
+	int i, nr_rows,callee_leg_idx,db_timeout;
 	int no_rows = 10;
 	unsigned int db_caller_cseq = 0, db_callee_cseq = 0;
 	unsigned int dlg_caller_cseq = 0, dlg_callee_cseq = 0;
@@ -1590,10 +1596,10 @@ static int sync_dlg_db_mem(void)
 				link_dlg(dlg, 0);
 
 				dlg->h_id = hash_id;
-				next_id = d_table->entries[dlg->h_entry].next_id;
 
-				d_table->entries[dlg->h_entry].next_id =
-					(next_id <= dlg->h_id) ? (dlg->h_id+1) : next_id;
+				/* next_id follows the max value of all loaded ids */
+				if (d_table->entries[dlg->h_entry].next_id <= dlg->h_id)
+					d_table->entries[dlg->h_entry].next_id = dlg->h_id + 1;
 
 				dlg->start_ts	= VAL_INT(values+6);
 
@@ -1737,8 +1743,10 @@ static int sync_dlg_db_mem(void)
 						cseq1.s = VAL_STR(values+9).s;
 						cseq1.len = strlen(cseq1.s);
 
-						str2int(&cseq1,&db_caller_cseq);
-						str2int(&known_dlg->legs[DLG_CALLER_LEG].r_cseq,&dlg_caller_cseq);
+						if (str2int(&cseq1,&db_caller_cseq) < 0)
+							LM_ERR("Caller CSEQ not numeric!\n");
+						if (str2int(&known_dlg->legs[DLG_CALLER_LEG].r_cseq,&dlg_caller_cseq) < 0)
+							LM_ERR("dlg Caller CSEQ not numeric!\n");
 
 						/* Is DB cseq newer ? */
 						if (db_caller_cseq > dlg_caller_cseq) {
@@ -1766,8 +1774,10 @@ static int sync_dlg_db_mem(void)
 						cseq2.len = strlen(cseq2.s);
 
 						callee_leg_idx = callee_idx(known_dlg);
-						str2int(&cseq2,&db_callee_cseq);
-						str2int(&known_dlg->legs[callee_leg_idx].r_cseq,&dlg_callee_cseq);
+						if (str2int(&cseq2,&db_callee_cseq) < 0)
+							LM_ERR("Callee CSEQ not numeric!\n");
+						if (str2int(&known_dlg->legs[callee_leg_idx].r_cseq,&dlg_callee_cseq) < 0)
+							LM_ERR("dlg Callee CSEQ not numeric!\n");
 
 						/* Is DB cseq newer ? */
 						if (db_callee_cseq > dlg_callee_cseq) {
@@ -2045,7 +2055,7 @@ static int restore_dlg_db(void)
 				ins_done = 1;
 
 			/* dialog saved */
-			run_dlg_callbacks( DLGCB_SAVED, cell, 0, DLG_DIR_NONE, 0);
+			run_dlg_callbacks( DLGCB_DB_SAVED, cell, 0, DLG_DIR_NONE, NULL, 1);
 
 			cell->flags &= ~(DLG_FLAG_NEW |DLG_FLAG_CHANGED|DLG_FLAG_VP_CHANGED);
 		}

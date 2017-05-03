@@ -54,9 +54,8 @@
 #include "parse_content.h"
 #include "parse_via.h"
 #include "parse_fline.h"
-#include "parse_multipart.h"
+#include "parse_body.h"
 #include "hf.h"
-#include "sdp/sdp.h"
 
 
 /* convenience short-cut macros */
@@ -107,12 +106,19 @@ enum request_method {
                                       * callbacks were registered */
 #define FL_SHM_UPDATABLE     (1<<15) /* a SHM cloned message can be updated
                                       * (TM used, requires FL_SHM_CLONE) */
-#define FL_TM_CB_REGISTERED  (1<<16) /* tm callbacks for this message have been
-									 * registered (by setting this flag, you
-									 * will know if any tm callbacks for this
-									 * message have been registered) */
-#define FL_TM_FAKE_REQ       (1<<17) /* the SIP request is a fake one, generated based on the transaction, 
-					either in failure route or resume route */	
+#define FL_SHM_UPDATED       (1<<16) /* an updatable SHM cloned message that 
+                                      * had at least one update; if the flag is
+                                      * missing, it means the cloned msg was
+                                      * never updated.
+                                      * (TM used, requires FL_SHM_UPDATABLE) */
+#define FL_TM_CB_REGISTERED  (1<<17) /* tm callbacks for this message have been
+                                      * registered (by setting this flag, you
+                                      * will know if any tm callbacks for this
+                                      * message have been registered) */
+#define FL_TM_FAKE_REQ       (1<<18) /* the SIP request is a fake one,
+                                      * generated based on the transaction,
+                                      * either in failure route or resume 
+                                      * route */
 
 /* define the # of unknown URI parameters to parse */
 #define URI_MAX_U_PARAMS 10
@@ -249,9 +255,7 @@ struct sip_msg {
 	struct hdr_field* proxy_authenticate;
 	struct hdr_field* min_expires;
 
-	struct sdp_info* sdp;
-
-	struct multi_body * multi;
+	struct sip_msg_body *body;
 
 	char* eoh;        /* pointer to the end of header (if found) or null */
 	char* unparsed;   /* here we stopped parsing*/

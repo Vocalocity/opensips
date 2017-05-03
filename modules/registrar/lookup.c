@@ -40,8 +40,13 @@
 #include "../../parser/parse_rr.h"
 #include "../usrloc/usrloc.h"
 #include "../../parser/parse_from.h"
+
+#include "../../lib/reg/sip_msg.h"
+#include "../../lib/reg/regtime.h"
+#include "../../lib/reg/config.h"
+#include "../../lib/reg/ci.h"
+
 #include "common.h"
-#include "regtime.h"
 #include "reg_mod.h"
 #include "lookup.h"
 #include "sip_msg.h"
@@ -55,12 +60,9 @@
 
 #define ua_re_check(return) \
 	if (flags & REG_LOOKUP_UAFILTER_FLAG) { \
-		tmp = *(ptr->user_agent.s+ptr->user_agent.len); \
-		*(ptr->user_agent.s+ptr->user_agent.len) = '\0'; \
 		if (regexec(&ua_re, ptr->user_agent.s, 1, &ua_match, 0)) { \
 			return; \
 		} \
-		*(ptr->user_agent.s+ptr->user_agent.len) = tmp; \
 	}
 
 unsigned int nbranches;
@@ -186,7 +188,7 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 		return -3;
 	}
 
-	get_act_time();
+	update_act_time();
 
 	ul.lock_udomain((udomain_t*)_t, &aor);
 	res = ul.get_urecord((udomain_t*)_t, &aor, &r);
@@ -213,7 +215,7 @@ int lookup(struct sip_msg* _m, char* _t, char* _f, char* _s)
 	/* look first for an un-expired and suported contact */
 search_valid_contact:
 	while ( (ptr) &&
-	!(VALID_CONTACT(ptr,act_time) && (ret=-2) && allowed_method(_m,ptr,flags)))
+	!(VALID_CONTACT(ptr,get_act_time()) && (ret=-2) && allowed_method(_m,ptr,flags)))
 		ptr = ptr->next;
 	if (ptr==0) {
 		/* nothing found */
@@ -259,7 +261,7 @@ search_valid_contact:
 
 		it = ptr->next;
 		while ( it ) {
-			if (VALID_CONTACT(it,act_time)) {
+			if (VALID_CONTACT(it,get_act_time())) {
 				if (it->instance.len-2 == sip_instance.len && sip_instance.s &&
 						memcmp(it->instance.s+1,sip_instance.s,sip_instance.len) == 0)
 					if (it->last_modified > ptr->last_modified) {
@@ -339,7 +341,7 @@ search_valid_contact:
 
 	do {
 		for( ; ptr ; ptr = ptr->next ) {
-			if (VALID_CONTACT(ptr, act_time) && allowed_method(_m,ptr,flags)) {
+			if (VALID_CONTACT(ptr, get_act_time()) && allowed_method(_m,ptr,flags)) {
 				path_dst.len = 0;
 				if(ptr->path.s && ptr->path.len
 				&& get_path_dst_uri(&ptr->path, &path_dst) < 0) {
@@ -422,7 +424,7 @@ struct to_body* select_uri(struct sip_msg* _m)
 
 	} else {
 		/* WARNING in msg_aor_parse the to header is checked in
-		 * parse_message so no need to check it; take care when
+		 * parse_reg_headers so no need to check it; take care when
 		 * you use this function */
 		return get_to(_m);
 	}
@@ -452,7 +454,7 @@ int msg_aor_parse(struct sip_msg* _m, char *_aor, str *_saor)
 	pv_value_t val;
 	struct to_body *hdr;
 
-	if (parse_message(_m) < 0) {
+	if (parse_reg_headers(_m) < 0) {
 		LM_ERR("unable to parse message\n");
 		return -2;
 	}
@@ -507,7 +509,9 @@ int is_registered(struct sip_msg* _m, char *_d, char* _a)
 {
 	int ret=NOT_FOUND;
 	urecord_t* r;
+	ucontact_t *c;
 	udomain_t* ud = (udomain_t*)_d;
+	int_str istr;
 	str aor;
 
 	if (msg_aor_parse(_m, _a, &aor)) {
@@ -516,10 +520,24 @@ int is_registered(struct sip_msg* _m, char *_d, char* _a)
 	}
 
 	CHECK_DOMAIN(ud);
+	update_act_time();
 
+	LM_DBG("checking aor <%.*s>\n",aor.len,aor.s);
 	ul.lock_udomain(ud, &aor);
-	if (ul.get_urecord(ud, &aor, &r) == 0)
-		ret = IS_FOUND;
+	if (ul.get_urecord(ud, &aor, &r) == 0) {
+		for ( c=r->contacts; c && (ret==NOT_FOUND); c=c->next ) {
+			if (VALID_CONTACT(c,get_act_time())) {
+				/* populate the 'attributes' avp */
+				if (attr_avp_name != -1) {
+					istr.s = c->attr;
+					if (add_avp_last(AVP_VAL_STR, attr_avp_name, istr) != 0) {
+						LM_ERR("Failed to populate attr avp!\n");
+					}
+				}
+				ret = IS_FOUND;
+			}
+		}
+	}
 	ul.unlock_udomain(ud, &aor);
 
 	return ret;
@@ -544,7 +562,9 @@ int is_contact_registered(struct sip_msg* _m, char *_d, char* _a,
 	int exp;
 
 	str aor;
-	str curi, callid;
+	str callid = {NULL, 0};
+	str curi = {NULL, 0};
+	pv_value_t val;
 
 	udomain_t* ud = (udomain_t*)_d;
 	urecord_t* r;
@@ -581,17 +601,23 @@ int is_contact_registered(struct sip_msg* _m, char *_d, char* _a,
 		curi = ct->uri;
 	} else {
 		if (_c) {
-			if (fixup_get_svalue(_m, (gparam_p)_c, &curi) != 0) {
-				LM_ERR("failed to retrieve contact value from pv!\n");
+			if (pv_get_spec_value(_m, (pv_spec_p)_c, &val)!=0 ||
+			(val.flags&PV_VAL_STR)==0 ) {
+				LM_ERR("failed to retrieve string value from CONTACT "
+					"parameter!\n");
 				return -1;
 			}
+			curi = val.rs;
 		}
 
 		if (_cid) {
-			if (fixup_get_svalue(_m, (gparam_p)_cid, &callid) != 0) {
-				LM_ERR("failed to retrieve contact value from pv!\n");
+			if (pv_get_spec_value(_m, (pv_spec_p)_cid, &val)!=0 ||
+			(val.flags&PV_VAL_STR)==0 ) {
+				LM_ERR("failed to retrieve string value from CALLID "
+					"parameter!\n");
 				return -1;
 			}
+			callid = val.rs;
 		}
 	}
 
@@ -649,8 +675,9 @@ int is_ip_registered(struct sip_msg* _m, char* _d, char* _a, char *_out_pv)
 {
 	str aor;
 	str host, pv_host={NULL, 0};
+	struct sip_uri tmp_uri;
+	str uri;
 
-	int start;
 	char is_avp=1;
 
 	udomain_t* ud = (udomain_t*)_d;
@@ -695,16 +722,18 @@ int is_ip_registered(struct sip_msg* _m, char* _d, char* _a, char *_out_pv)
 	}
 
 	for (c=r->contacts; c; c=c->next) {
-		if (!c->received.len || !c->received.s || c->received.len < 4)
-			continue;
-
-		/* 'sip:' or 'sips:' ?; is this sane? FIXME if problems */
-		start    = c->received.s[3]==':'?4:5;
-		host.s   = c->received.s   + start;
-		host.len = c->received.len - start;
+		if (c->received.len && c->received.s)
+			uri = c->received;
+		else
+			uri = c->c;
+		if (parse_uri(uri.s, uri.len, &tmp_uri) < 0) {
+			LM_ERR("contact [%.*s] is not valid! Will not store it!\n",
+				  uri.len, uri.s);
+		}
+		host = tmp_uri.host;
 
 		if (!is_avp) {
-			if (pv_host.len <= host.len
+			if (pv_host.len == host.len
 				&& !memcmp(host.s, pv_host.s, pv_host.len))
 				goto out_unlock_found;
 
@@ -720,7 +749,7 @@ int is_ip_registered(struct sip_msg* _m, char* _d, char* _a, char *_out_pv)
 				continue;
 			}
 
-			if (pv_host.len <= host.len
+			if (pv_host.len == host.len
 					&& !memcmp(host.s, pv_host.s, pv_host.len))
 				goto out_unlock_found;
 		}
@@ -738,14 +767,3 @@ out_unlock_found:
 #undef IS_FOUND
 #undef NOT_FOUND
 
-
-/*! \brief the registered() function
- * Return true if the AOR in the Request-URI is registered,
- * it is similar to lookup but registered neither rewrites
- * the Request-URI nor appends branches
- */
-int registered(struct sip_msg* _m, char* _t, char* _s, char *_c)
-{
-	LM_WARN("Deprecated! Use is_contact_registered() instead!\n");
-	return is_contact_registered(_m, _t, _s, NULL, _c);
-}

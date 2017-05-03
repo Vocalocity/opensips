@@ -52,8 +52,11 @@ void tcp_connect_proc_to_tcp_main( int proc_no, int chid );
 /* tells how many processes the TCP layer will create */
 int tcp_count_processes(void);
 
-/* starts all TCP related processes */
+/* starts all TCP worker processes */
 int tcp_start_processes(int *chd_rank, int *startup_done);
+
+/* starts the TCP listening process */
+int tcp_start_listener(void);
 
 /* MI function to list all existing TCP connections */
 struct mi_root *mi_tcp_list_conns(struct mi_root *cmd, void *param);
@@ -97,5 +100,10 @@ void tcp_conn_destroy(struct tcp_connection* tcpconn);
 
 /* used to tune the connection attributes */
 int tcp_conn_fcntl(struct receive_info *rcv, int attr, void *value);
+
+/* returns the correlation ID of a TCP connection */
+int tcp_get_correlation_id( int id, unsigned long long *cid);
+
+extern int last_outgoing_tcp_id;
 
 #endif /* _NET_TCP_H_ */

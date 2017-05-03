@@ -474,7 +474,7 @@ static int insert_in_cachedb(cache_entry_t *c_entry, db_handlers_t *db_hdls, db_
 	char *int_key_buf = NULL;
 	str str_val;
 	db_type_t val_type;
-	str str_key;
+	str str_key = {NULL, 0};
 	str cdb_val;
 	str cdb_key;
 
@@ -612,6 +612,7 @@ static db_handlers_t *db_init_test_conn(cache_entry_t *c_entry)
 	db_res_t *sql_res;
 	str cachedb_res;
 	unsigned int i;
+	int rc;
 
 	new_db_hdls = pkg_malloc(sizeof(db_handlers_t));
 	if (!new_db_hdls) {
@@ -638,7 +639,7 @@ static db_handlers_t *db_init_test_conn(cache_entry_t *c_entry)
 			c_entry->cachedb_url.len, c_entry->cachedb_url.s);
 		return NULL;
 	}
-	/* setting and geting a test key in cachedb */
+	/* setting and getting a test key in cachedb */
 	if (new_db_hdls->cdbf.set(new_db_hdls->cdbcon, &cdb_test_key, &cdb_test_val, 0) < 0) {
 		LM_ERR("Failed to set test key in cachedb: %.*s\n",
 			c_entry->cachedb_url.len, c_entry->cachedb_url.s);
@@ -653,7 +654,9 @@ static db_handlers_t *db_init_test_conn(cache_entry_t *c_entry)
 		new_db_hdls->cdbcon = 0;
 		return NULL;
 	}
-	if (str_strcmp(&cachedb_res, &cdb_test_val) != 0) {
+	rc = str_strcmp(&cachedb_res, &cdb_test_val);
+	pkg_free(cachedb_res.s);
+	if (rc != 0) {
 		LM_ERR("Inconsistent test key for cachedb: %.*s\n",
 			c_entry->cachedb_url.len, c_entry->cachedb_url.s);
 		new_db_hdls->cdbf.destroy(new_db_hdls->cdbcon);
@@ -845,7 +848,7 @@ static int load_key(cache_entry_t *c_entry, db_handlers_t *db_hdls, str key, db_
 	}
 
 	if (RES_ROW_N(*sql_res) == 0) {
-		LM_WARN("key %.*s not found in SQL db\n", key.len, key.s);
+		LM_DBG("key %.*s not found in SQL db\n", key.len, key.s);
 		null_val.len = 0;
 		null_val.s = NULL;
 		if (db_hdls->cdbf.set(db_hdls->cdbcon, &src_key, &null_val, c_entry->expire) < 0) {
@@ -1158,7 +1161,7 @@ static int cdb_fetch(pv_name_fix_t *pv_name, str *cdb_res, int *entry_rld_vers)
 {
 	str cdb_key;
 	str rld_vers_key;
-	int rc;
+	int rc = -1;
 
 	cdb_key.len = pv_name->id.len + pv_name->key.len;
 	cdb_key.s = pkg_malloc(cdb_key.len);
@@ -1174,19 +1177,21 @@ static int cdb_fetch(pv_name_fix_t *pv_name, str *cdb_res, int *entry_rld_vers)
 		rld_vers_key.s = pkg_malloc(rld_vers_key.len);
 		if (!rld_vers_key.s) {
 			LM_ERR("No more pkg memory\n");
-			return -1;
+			goto error;
 		}
 		memcpy(rld_vers_key.s, pv_name->id.s, pv_name->id.len);
 		memcpy(rld_vers_key.s + pv_name->id.len, "_sql_cacher_reload_vers", 23);
 
-		if(pv_name->db_hdls->cdbf.get_counter(pv_name->db_hdls->cdbcon,
-									&rld_vers_key, entry_rld_vers) < 0)
-			return -1;
+		rc = pv_name->db_hdls->cdbf.get_counter(pv_name->db_hdls->cdbcon,
+									&rld_vers_key, entry_rld_vers);
 		pkg_free(rld_vers_key.s);
+		if (rc < 0)
+			goto error;
 	} else
 		*entry_rld_vers = 0;
 
 	rc = pv_name->db_hdls->cdbf.get(pv_name->db_hdls->cdbcon, &cdb_key, cdb_res);
+error:
 	pkg_free(cdb_key.s);
 	return rc;
 }
@@ -1206,7 +1211,7 @@ static int cdb_val_decode(pv_name_fix_t *pv_name, str *cdb_val, int reload_versi
 
 	if (pv_name->col_offset == -1) {
 		LM_WARN("Unknown column %.*s\n", pv_name->col.len, pv_name->col.s);
-		return -1;
+		return 2;
 	}
 
 	if (!pv_name->c_entry->on_demand) {
@@ -1217,7 +1222,7 @@ static int cdb_val_decode(pv_name_fix_t *pv_name, str *cdb_val, int reload_versi
 		memcpy(&int_val, int_buf, 4);
 
 		if (reload_version != int_val)
-			return -2;
+			return 3;
 	}
 
 	/* null integer value in db */
@@ -1263,7 +1268,7 @@ static int cdb_val_decode(pv_name_fix_t *pv_name, str *cdb_val, int reload_versi
 	return 0;
 error:
 	LM_ERR("Failed to decode value: %.*s from cachedb\n", cdb_val->len, cdb_val->s);
-	return -1;
+	return 2;
 }
 
 static void optimize_cdb_decode(pv_name_fix_t *pv_name)
@@ -1557,6 +1562,7 @@ int pv_parse_name(pv_spec_p sp, str *in)
 	return 0;
 }
 
+static str valbuff;
 int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t *res)
 {
 	pv_name_fix_t *pv_name;
@@ -1566,7 +1572,7 @@ int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t 
 	int rc, rc2, int_res = 0, l = 0;
 	char *ch = NULL;
 	long long one = 1;
-	str str_res = {NULL, 0}, cdb_res;
+	str str_res = {NULL, 0}, cdb_res = {NULL, 0};
 	int entry_rld_vers;
 
 	if (!param || param->pvn.type != PV_NAME_PVAR ||
@@ -1612,12 +1618,14 @@ int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t 
 	rc = cdb_fetch(pv_name, &cdb_res, &entry_rld_vers);
 	if (rc == -1) {
 		LM_ERR("Error fetching from cachedb\n");
+		if (!pv_name->c_entry->on_demand)
+			lock_stop_read(pv_name->c_entry->ref_lock);
 		return pv_get_null(msg, param, res);
 	}
 
 	if (!pv_name->c_entry->on_demand) {
-		if (rc == -2) {
-			LM_WARN("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
+		if (rc <= -2) {
+			LM_DBG("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
 			lock_stop_read(pv_name->c_entry->ref_lock);
 			return pv_get_null(msg, param, res);
 		} else {
@@ -1628,29 +1636,31 @@ int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t 
 
 			lock_stop_read(pv_name->c_entry->ref_lock);
 
-			if (rc2 == -1)
-				return pv_get_null(msg, param, res);
-			if (rc2 == -2) {
-				LM_WARN("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
-				return pv_get_null(msg, param, res);
+			if (rc2 == 2)
+				goto out_free_null;
+			if (rc2 == 3) {
+				LM_DBG("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
+				goto out_free_null;
 			}
 			if (rc2 == 1) {
-				LM_WARN("NULL value in SQL db\n");
-				return pv_get_null(msg, param, res);
+				LM_DBG("NULL value in SQL db\n");
+				goto out_free_null;
 			}
 		}
 	} else {
-		if (rc == -2) {
+		if (rc <= -2) {
 			rc2 = on_demand_load(pv_name, &cdb_res, &str_res, &int_res);
 			if (rc2 == -1 || rc2 == -2)
 				return pv_get_null(msg, param, res);
+			if (rc2 == 2 || rc2 == 3)
+				goto out_free_null;
 			if (rc2 == 1) {
-				LM_WARN("NULL value in SQL db\n");
-				return pv_get_null(msg, param, res);
+				LM_DBG("NULL value in SQL db\n");
+				goto out_free_null;
 			}
 		} else {
-			if (!cdb_res.len || !cdb_res.s) {
-				LM_WARN("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
+			if (cdb_res.len == 0 || !cdb_res.s) {
+				LM_DBG("key %.*s not found in SQL db\n", pv_name->key.len, pv_name->key.s);
 				return pv_get_null(msg, param, res);
 			}
 
@@ -1658,18 +1668,26 @@ int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t 
 				optimize_cdb_decode(pv_name);
 
 			rc2 = cdb_val_decode(pv_name, &cdb_res, 0, &str_res, &int_res);
-			if (rc2 == -1)
-				return pv_get_null(msg, param, res);
+			if (rc2 == 2)
+				goto out_free_null;
 			if (rc2 == 1) {
-				LM_WARN("NULL value in SQL db\n");
-				return pv_get_null(msg, param, res);
+				LM_DBG("NULL value in SQL db\n");
+				goto out_free_null;
 			}
 		}
 	}
 
 	if ((pv_name->c_entry->column_types & (one << pv_name->col_nr)) != 0) {
+		if (pkg_str_resize(&valbuff, str_res.len) != 0) {
+			LM_ERR("failed to alloc buffer\n");
+			goto out_free_null;
+		}
+
+		memcpy(valbuff.s, str_res.s, str_res.len);
+		valbuff.len = str_res.len;
+
 		res->flags = PV_VAL_STR;
-		res->rs.s = str_res.s;
+		res->rs.s = valbuff.s;
 		res->rs.len = str_res.len;
 	} else {
 		res->ri = int_res;
@@ -1679,7 +1697,14 @@ int pv_get_sql_cached_value(struct sip_msg *msg,  pv_param_t *param, pv_value_t 
 		res->flags = PV_VAL_STR|PV_VAL_INT|PV_TYPE_INT;
 	}
 
+	if (cdb_res.s)
+		pkg_free(cdb_res.s);
 	return 0;
+
+out_free_null:
+	if (cdb_res.s)
+		pkg_free(cdb_res.s);
+	return pv_get_null(msg, param, res);
 }
 
 static void destroy(void)

@@ -458,7 +458,8 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 			LM_DBG("dialog replied from script - cannot get callee info\n");
 		}
 		/* The state does not change, but the msg is mutable in this callback*/
-		run_dlg_callbacks(DLGCB_RESPONSE_FWDED, dlg, rpl, DLG_DIR_UPSTREAM, 0);
+		run_dlg_callbacks(DLGCB_RESPONSE_FWDED, dlg, rpl,
+			DLG_DIR_UPSTREAM, NULL, 0);
 		return;
 	}
 	if (type==TMCB_TRANS_CANCELLED) {
@@ -494,7 +495,7 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 	               &unref, DLG_CALLER_LEG, 0);
 
 	if (new_state==DLG_STATE_EARLY && old_state!=DLG_STATE_EARLY) {
-		run_dlg_callbacks(DLGCB_EARLY, dlg, rpl, DLG_DIR_UPSTREAM, 0);
+		run_dlg_callbacks(DLGCB_EARLY, dlg, rpl, DLG_DIR_UPSTREAM, NULL, 0);
 	        if_update_stat(dlg_enable_stats, early_dlgs, 1);
 		return;
 	}
@@ -520,38 +521,6 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 			ref_dlg(dlg,1);
 		}
 
-		if (dlg->flags & DLG_FLAG_PING_CALLER || dlg->flags & DLG_FLAG_PING_CALLEE) {
-			if (0 != insert_ping_timer( dlg)) {
-				LM_CRIT("Unable to insert ping dlg %p [%u:%u] on event %d [%d->%d] "
-					"with clid '%.*s' and tags '%.*s' '%.*s'\n",
-					dlg, dlg->h_entry, dlg->h_id, event, old_state, new_state,
-					dlg->callid.len, dlg->callid.s,
-					dlg->legs[DLG_CALLER_LEG].tag.len,
-					dlg->legs[DLG_CALLER_LEG].tag.s,
-					dlg->legs[callee_idx(dlg)].tag.len,
-					ZSW(dlg->legs[callee_idx(dlg)].tag.s));
-			} else {
-				/* reference dialog as kept in ping timer list */
-				ref_dlg(dlg,1);
-			}
-		}
-
-		if (dlg->flags & DLG_FLAG_REINVITE_PING_CALLER || dlg->flags & DLG_FLAG_REINVITE_PING_CALLEE) {
-			if (0 != insert_reinvite_ping_timer( dlg)) {
-				LM_CRIT("Unable to insert ping dlg %p [%u:%u] on event %d [%d->%d] "
-					"with clid '%.*s' and tags '%.*s' '%.*s'\n",
-					dlg, dlg->h_entry, dlg->h_id, event, old_state, new_state,
-					dlg->callid.len, dlg->callid.s,
-					dlg->legs[DLG_CALLER_LEG].tag.len,
-					dlg->legs[DLG_CALLER_LEG].tag.s,
-					dlg->legs[callee_idx(dlg)].tag.len,
-					ZSW(dlg->legs[callee_idx(dlg)].tag.s));
-			} else {
-				/* reference dialog as kept in reinvite ping timer list */
-				ref_dlg(dlg,1);
-			}
-		}
-
 		/* save the settings to the database,
 		 * if realtime saving mode configured- save dialog now
 		 * else: the next time the timer will fire the update*/
@@ -560,7 +529,7 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 			update_dialog_dbinfo(dlg);
 
 		/* dialog confirmed */
-		run_dlg_callbacks( DLGCB_CONFIRMED, dlg, rpl, DLG_DIR_UPSTREAM, 0);
+		run_dlg_callbacks(DLGCB_CONFIRMED, dlg, rpl, DLG_DIR_UPSTREAM, NULL,0);
 
 		if (old_state==DLG_STATE_EARLY)
 			if_update_stat(dlg_enable_stats, early_dlgs, -1);
@@ -579,7 +548,7 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 		dlg_unlock_dlg(dlg);
 
 		/* dialog setup not completed (3456XX) */
-		run_dlg_callbacks( DLGCB_FAILED, dlg, rpl, DLG_DIR_UPSTREAM, 0);
+		run_dlg_callbacks( DLGCB_FAILED, dlg, rpl, DLG_DIR_UPSTREAM, NULL, 0);
 		/* do unref */
 		if (unref)
 			unref_dlg(dlg,unref);
@@ -819,7 +788,7 @@ static void dlg_seq_up_onreply_mod_cseq(struct cell* t, int type,
 	if (type==TMCB_RESPONSE_FWDED &&
 			(dlg->cbs.types)&DLGCB_RESPONSE_WITHIN) {
 		run_dlg_callbacks(DLGCB_RESPONSE_WITHIN, dlg, param->rpl,
-			DLG_DIR_UPSTREAM, 0);
+			DLG_DIR_UPSTREAM, NULL, 0);
 		return;
 	}
 
@@ -838,7 +807,7 @@ static void dlg_seq_up_onreply(struct cell* t, int type,
 	if (type==TMCB_RESPONSE_FWDED &&
 			(dlg->cbs.types)&DLGCB_RESPONSE_WITHIN) {
 		run_dlg_callbacks(DLGCB_RESPONSE_WITHIN, dlg, param->rpl,
-			DLG_DIR_UPSTREAM, 0);
+			DLG_DIR_UPSTREAM, NULL, 0);
 		return;
 	}
 
@@ -860,7 +829,7 @@ static void dlg_seq_down_onreply_mod_cseq(struct cell* t, int type,
 	if (type==TMCB_RESPONSE_FWDED &&
 		(dlg->cbs.types)&DLGCB_RESPONSE_WITHIN) {
 		run_dlg_callbacks(DLGCB_RESPONSE_WITHIN, dlg, param->rpl,
-			DLG_DIR_DOWNSTREAM, 0);
+			DLG_DIR_DOWNSTREAM, NULL, 0);
 		return;
 	}
 
@@ -895,7 +864,7 @@ static void dlg_seq_down_onreply(struct cell* t, int type,
 	if (type==TMCB_RESPONSE_FWDED &&
 		(dlg->cbs.types)&DLGCB_RESPONSE_WITHIN) {
 		run_dlg_callbacks(DLGCB_RESPONSE_WITHIN, dlg, param->rpl,
-			DLG_DIR_DOWNSTREAM, 0);
+			DLG_DIR_DOWNSTREAM, NULL, 0);
 		return;
 	}
 
@@ -1193,6 +1162,39 @@ static void dlg_onreq_out(struct cell* t, int type, struct tmcb_params *ps)
 	pkg_free(msg);
 }
 
+static void dlg_update_contact(struct cell* t, int type, struct tmcb_params *ps)
+{
+	struct sip_msg *msg;
+	struct dlg_cell *dlg;
+	str contact;
+	char *tmp;
+
+	dlg = (struct dlg_cell *)(*ps->param);
+	msg = ps->req;
+
+	if (!dlg || !msg) {
+		LM_ERR("no request found (%p) or no dialog(%p) provided!\n", msg, dlg);
+		return;
+	}
+
+	if (!msg->contact || !msg->contact->parsed ||
+			!((contact_body_t *)msg->contact->parsed)->contacts)
+		return; /* contact not updated */
+	contact = ((contact_body_t *)msg->contact->parsed)->contacts->uri;
+	if (dlg->legs[DLG_CALLER_LEG].contact.s)
+		tmp = shm_realloc(dlg->legs[DLG_CALLER_LEG].contact.s, contact.len);
+	else
+		tmp = shm_malloc(contact.len);
+	if (!tmp) {
+		LM_ERR("not enough memory for new contact!\n");
+		return;
+	}
+	dlg->legs[DLG_CALLER_LEG].contact.s = tmp;
+	dlg->legs[DLG_CALLER_LEG].contact.len = contact.len;
+	memcpy(dlg->legs[DLG_CALLER_LEG].contact.s, contact.s, contact.len);
+	LM_DBG("Updated dialog %p contact to <%.*s>\n", dlg, contact.len, contact.s);
+}
+
 int dlg_create_dialog(struct cell* t, struct sip_msg *req,unsigned int flags)
 {
 	struct dlg_cell *dlg;
@@ -1296,6 +1298,12 @@ int dlg_create_dialog(struct cell* t, struct sip_msg *req,unsigned int flags)
 		}
 	}
 
+	if(d_tmb.register_tmcb(req, 0, TMCB_REQUEST_FWDED, dlg_update_contact,
+			(void *)dlg, 0) <=0) {
+		LM_ERR("can't register dlg_update_contact\n");
+		return -1;
+	}
+
 	if_update_stat( dlg_enable_stats, processed_dlgs, 1);
 
 	return 0;
@@ -1311,36 +1319,42 @@ error:
 static inline int update_cseqs(struct dlg_cell *dlg, struct sip_msg *req,
 											unsigned int leg, int update_field)
 {
+	int ret;
 	if ( (!req->cseq && parse_headers(req,HDR_CSEQ_F,0)<0) || !req->cseq ||
 	!req->cseq->parsed) {
 		LM_ERR("bad sip message or missing CSeq hdr :-/\n");
 		return -1;
 	}
 
-	return dlg_update_cseq(dlg, leg, &((get_cseq(req))->number),update_field);
+	dlg_lock_dlg(dlg);
+	ret = dlg_update_cseq(dlg, leg, &((get_cseq(req))->number),update_field);
+	dlg_unlock_dlg(dlg);
+	return ret;
 }
 
 /* move r_cseq to prev_cseq in leg */
 static inline int switch_cseqs(struct dlg_cell *dlg,unsigned int leg_no)
 {
+	int ret = -1;
 	str* r_cseq,*prev_cseq;
 
 	r_cseq = &dlg->legs[leg_no].r_cseq;
 	prev_cseq = &dlg->legs[leg_no].prev_cseq;
 
+	dlg_lock_dlg(dlg);
 	if ( prev_cseq->s ) {
 		if (prev_cseq->len < r_cseq->len) {
 			prev_cseq->s = (char*)shm_realloc(prev_cseq->s,r_cseq->len);
 			if (prev_cseq->s==NULL) {
 				LM_ERR("no more shm mem for realloc (%d)\n",r_cseq->len);
-				return -1;
+				goto end;
 			}
 		}
 	} else {
 		prev_cseq->s = (char*)shm_malloc(r_cseq->len);
 		if (prev_cseq->s==NULL) {
 			LM_ERR("no more shm mem for malloc (%d)\n",r_cseq->len);
-			return -1;
+			goto end;
 		}
 	}
 
@@ -1348,7 +1362,10 @@ static inline int switch_cseqs(struct dlg_cell *dlg,unsigned int leg_no)
 	prev_cseq->len = r_cseq->len;
 
 	LM_DBG("prev_cseq = %.*s for leg %d\n",prev_cseq->len,prev_cseq->s,leg_no);
-	return 0;
+	ret = 0;
+end:
+	dlg_unlock_dlg(dlg);
+	return ret;
 }
 
 static inline void log_bogus_dst_leg(struct dlg_cell *dlg)
@@ -1576,12 +1593,12 @@ after_unlock5:
 				dlg->legs[callee_idx(dlg)].tag.len,
 				ZSW(dlg->legs[callee_idx(dlg)].tag.s));
 		} else {
-			/* dialog sucessfully removed from timer -> unref */
+			/* dialog successfully removed from timer -> unref */
 			unref++;
 		}
 
 		/* dialog terminated (BYE) */
-		run_dlg_callbacks( DLGCB_TERMINATED, dlg, req, dir, 0);
+		run_dlg_callbacks( DLGCB_TERMINATED, dlg, req, dir, NULL, 0);
 
 		/* delete the dialog from DB */
 		if (should_remove_dlg_db())
@@ -1608,7 +1625,7 @@ after_unlock5:
 		}
 
 		/* within dialog request */
-		run_dlg_callbacks( DLGCB_REQ_WITHIN, dlg, req, dir, 0);
+		run_dlg_callbacks( DLGCB_REQ_WITHIN, dlg, req, dir, NULL, 0);
 
 		/* update timer during sequential request? */
 		if (dlg->lifetime_dirty) {
@@ -1804,12 +1821,14 @@ early_check:
 	if ( (event==DLG_EVENT_REQPRACK || event == DLG_EVENT_REQ ||
 			event == DLG_EVENT_REQBYE) && new_state==DLG_STATE_EARLY) {
 		/* within dialog request */
-		run_dlg_callbacks( DLGCB_REQ_WITHIN, dlg, req, dir, 0);
+		run_dlg_callbacks( DLGCB_REQ_WITHIN, dlg, req, dir, NULL, 0);
 
-		LM_DBG("EARLY event %d successfully processed (dst_leg=%d)\n",event,dst_leg);
-			if (dst_leg==-1 || switch_cseqs(dlg, dst_leg) != 0 ||
-				update_cseqs(dlg,req,dst_leg,0))
-				LM_ERR("cseqs update failed on leg=%d\n",dst_leg);
+		LM_DBG("EARLY event %d successfully processed (dst_leg=%d)\n",
+			event,dst_leg);
+
+		if (dst_leg==-1 || switch_cseqs(dlg, dst_leg) != 0 ||
+		update_cseqs(dlg,req,dst_leg,0))
+			LM_ERR("cseqs update failed on leg=%d\n",dst_leg);
 	}
 
 	if(new_state==DLG_STATE_CONFIRMED && old_state==DLG_STATE_CONFIRMED_NA){
@@ -1819,6 +1838,41 @@ early_check:
 
 		if (dialog_replicate_cluster)
 			replicate_dialog_updated(dlg);
+
+		if (dlg->flags & DLG_FLAG_PING_CALLER ||
+		dlg->flags & DLG_FLAG_PING_CALLEE) {
+			if (0 != insert_ping_timer( dlg)) {
+				LM_CRIT("Unable to insert ping dlg %p [%u:%u] on event %d "
+					"[%d->%d] with clid '%.*s' and tags '%.*s' '%.*s'\n",
+					dlg, dlg->h_entry, dlg->h_id, event, old_state, new_state,
+					dlg->callid.len, dlg->callid.s,
+					dlg->legs[DLG_CALLER_LEG].tag.len,
+					dlg->legs[DLG_CALLER_LEG].tag.s,
+					dlg->legs[callee_idx(dlg)].tag.len,
+					ZSW(dlg->legs[callee_idx(dlg)].tag.s));
+			} else {
+				/* reference dialog as kept in ping timer list */
+				ref_dlg(dlg,1);
+			}
+		}
+
+		if (dlg->flags & DLG_FLAG_REINVITE_PING_CALLER ||
+		dlg->flags & DLG_FLAG_REINVITE_PING_CALLEE) {
+			if (0 != insert_reinvite_ping_timer( dlg)) {
+				LM_CRIT("Unable to insert ping dlg %p [%u:%u] on event %d "
+					"[%d->%d] with clid '%.*s' and tags '%.*s' '%.*s'\n",
+					dlg, dlg->h_entry, dlg->h_id, event, old_state, new_state,
+					dlg->callid.len, dlg->callid.s,
+					dlg->legs[DLG_CALLER_LEG].tag.len,
+					dlg->legs[DLG_CALLER_LEG].tag.s,
+					dlg->legs[callee_idx(dlg)].tag.len,
+					ZSW(dlg->legs[callee_idx(dlg)].tag.s));
+			} else {
+				/* reference dialog as kept in reinvite ping timer list */
+				ref_dlg(dlg,1);
+			}
+		}
+
 	}
 
 	return;
@@ -1881,7 +1935,8 @@ void dlg_ontimeout( struct dlg_tl *tl)
 
 		/* dialog timeout */
 		if (push_new_processing_context( dlg, &old_ctx, &new_ctx, &fake_msg)==0) {
-			run_dlg_callbacks( DLGCB_EXPIRED, dlg, fake_msg, DLG_DIR_NONE, 0);
+			run_dlg_callbacks( DLGCB_EXPIRED, dlg, fake_msg,
+				DLG_DIR_NONE, NULL, 0);
 
 			if (current_processing_ctx == NULL)
 				*new_ctx = NULL;
@@ -2050,13 +2105,14 @@ int fix_route_dialog(struct sip_msg *req,struct dlg_cell *dlg)
 		buf = req->buf;
 
 		if (req->route) {
-			for (it=req->route;it;it=it->sibling)
+			for (it=req->route;it;it=it->sibling) {
 				if (it->parsed && ((rr_t*)it->parsed)->deleted)
 					continue;
 				if ((lmp = del_lump(req,it->name.s - buf,it->len,HDR_ROUTE_T)) == 0) {
 					LM_ERR("del_lump failed \n");
 					return -1;
 				}
+			}
 		}
 
 		if ( leg->route_set.len !=0 && leg->route_set.s) {

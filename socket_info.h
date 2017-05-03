@@ -87,7 +87,7 @@ int fix_socket_list(struct socket_info **);
  *       Therefore it is CRUCIAL that you free ipList when you are done with
  *       its contents, to avoid a nasty memory leak.
  */
-int get_socket_list_from_proto(int **ipList, int protocol);
+int get_socket_list_from_proto(unsigned int **ipList, int protocol);
 
 /*
  * Returns the sum of the number of bytes waiting to be consumed on all network
@@ -157,7 +157,8 @@ inline static int parse_proto(unsigned char* s, long len, int* proto)
 	unsigned int i;
 	unsigned int j;
 
-	/* must support 3-char arrays for udp, tcp, tls,
+	/* must support 2-char arrays for ws
+	 * must support 3-char arrays for udp, tcp, tls, wss
 	 * must support 4-char arrays for sctp
 	 * must support 7-char arrays for hep_tcp and hep_udp */
 	*proto=PROTO_NONE;
@@ -187,7 +188,7 @@ inline static int parse_proto(unsigned char* s, long len, int* proto)
 			break;
 
 		case PROTO2UINT('h', 'e', 'p'):
-			if (len != 7) return -1;
+			if (len != 7 || s[3] != '_') return -1;
 
 			j=PROTO2UINT(s[4], s[5], s[6]);
 			switch (j) {
@@ -369,6 +370,23 @@ static inline char* proto2str(int proto, char *p)
 	return p;
 }
 
+
+static inline char *proto2a(int proto)
+{
+	static char b[8]; /* IMPORTANT - keep this max aligned with the proto2str
+	                   * with an extra +1 for NULL terminator */
+	char *p;
+
+	/* print the proto name */
+	p = proto2str( proto, b);
+
+	/* make it null terminated */
+	*p = '\0';
+
+	return  b;
+}
+
+
 #define MAX_SOCKET_STR ( 4 + 1 + IP_ADDR_MAX_STR_SIZE+1+INT2STR_MAX_LEN+1)
 #define sock_str_len(_sock) ( 3 + 1*((_sock)->proto==PROTO_SCTP) + 1 + \
 		(_sock)->address_str.len + 1 + (_sock)->port_no_str.len)
@@ -413,7 +431,7 @@ static inline char* socket2str(struct socket_info *sock, char *s, int* len, int 
 
 
 #define get_sock_info_list(_proto) \
-	((_proto>=PROTO_FIRST && _proto<PROTO_LAST)?&protos[_proto].listeners:0)
+	((_proto>=PROTO_FIRST && _proto<PROTO_LAST)?(&protos[_proto].listeners):0)
 
 
 int probe_max_sock_buff( int sock, int buff_choice, int buff_max,

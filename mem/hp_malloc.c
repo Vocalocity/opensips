@@ -177,6 +177,20 @@ unsigned long frag_size(void* p){
 	return ((struct hp_frag*) ((char*)p - sizeof(struct hp_frag)))->size;
 }
 
+#ifdef SHM_EXTRA_STATS
+void set_stat_index (void *ptr, unsigned long idx) {
+	struct hp_frag *f;
+	f = (struct hp_frag *)((char*)ptr - sizeof(struct hp_frag));
+	f->statistic_index = idx;
+}
+
+unsigned long get_stat_index(void *ptr) {
+	struct hp_frag *f;
+	f = (struct hp_frag *)((char*)ptr - sizeof(struct hp_frag));
+	return f->statistic_index;
+}
+#endif
+
 static inline void hp_frag_attach(struct hp_block *hpb, struct hp_frag *frag)
 {
 	struct hp_frag **f;
@@ -199,7 +213,7 @@ static inline void hp_frag_attach(struct hp_block *hpb, struct hp_frag *frag)
 		(*f)->prev = &(frag->u.nxt_free);
 
 	/* mark fragment as "free" */
-#ifdef DBG_MALLOC
+#if (defined DBG_MALLOC) || (defined SHM_EXTRA_STATS)
 	frag->is_free = 1;
 #endif
 
@@ -799,26 +813,25 @@ void *hp_pkg_malloc(struct hp_block *hpb, unsigned long size)
 
 	/* out of memory... we have to shut down */
 #if defined(DBG_MALLOC) || defined(STATISTICS)
-	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used,
+	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used, size,
 			hpb->name[0] == 'p' ? "M" : "m");
 #else
-	LM_ERR(oom_nostats_errorf, hpb->name, hpb->name[0] == 'p' ? "M" : "m");
+	LM_ERR(oom_nostats_errorf, hpb->name, size,
+	       hpb->name[0] == 'p' ? "M" : "m");
 #endif
-	LM_INFO("Safely shutting down OpenSIPS (aborting) ...\n");
-	abort();
+	return NULL;
 
 found:
 	hp_frag_detach(hpb, frag);
 	update_stats_pkg_frag_detach(hpb, frag);
 
-#ifdef DBG_MALLOC
+#if (defined DBG_MALLOC) || (defined SHM_EXTRA_STATS)
 	/* mark fragment as "busy" */
 	frag->is_free = 0;
-
+#endif
 #ifndef STATISTICS
 	hpb->used += frag->size;
 	hpb->real_used += frag->size + FRAG_OVERHEAD;
-#endif
 #endif
 
 	/* split the fragment if possible */
@@ -895,12 +908,13 @@ void *hp_shm_malloc_unsafe(struct hp_block *hpb, unsigned long size)
 
 	/* out of memory... we have to shut down */
 #if defined(DBG_MALLOC) || defined(STATISTICS)
-	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used,
+	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used, size,
 			hpb->name[0] == 'p' ? "M" : "m");
 #else
-	LM_ERR(oom_nostats_errorf, hpb->name, hpb->name[0] == 'p' ? "M" : "m");
+	LM_ERR(oom_nostats_errorf, hpb->name, size,
+	       hpb->name[0] == 'p' ? "M" : "m");
 #endif
-	abort();
+	return NULL;
 
 found:
 	hp_frag_detach(hpb, frag);
@@ -916,10 +930,12 @@ found:
 		hpb->real_used += frag->size + FRAG_OVERHEAD;
 	}
 
-#ifdef DBG_MALLOC
+#if (defined DBG_MALLOC) || (defined SHM_EXTRA_STATS)
 	/* mark it as "busy" */
 	frag->is_free = 0;
+#endif
 
+#ifdef DBG_MALLOC
 	/* split the fragment if possible */
 	shm_frag_split_unsafe(hpb, frag, size, file, "fragm. from hp_malloc", line);
 	frag->file=file;
@@ -1006,12 +1022,13 @@ void *hp_shm_malloc(struct hp_block *hpb, unsigned long size)
 
 	/* out of memory... we have to shut down */
 #if defined(DBG_MALLOC) || defined(STATISTICS)
-	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used,
+	LM_ERR(oom_errorf, hpb->name, hpb->size - hpb->real_used, size,
 			hpb->name[0] == 'p' ? "M" : "m");
 #else
-	LM_ERR(oom_nostats_errorf, hpb->name, hpb->name[0] == 'p' ? "M" : "m");
+	LM_ERR(oom_nostats_errorf, hpb->name, size,
+	       hpb->name[0] == 'p' ? "M" : "m");
 #endif
-	abort();
+	return NULL;
 
 found:
 	hp_frag_detach(hpb, frag);
@@ -1023,10 +1040,12 @@ found:
 	hpb->real_used += (frag)->size + FRAG_OVERHEAD;
 #endif
 
-#ifdef DBG_MALLOC
+#if (defined DBG_MALLOC) || (defined SHM_EXTRA_STATS)
 	/* mark fragment as "busy" */
 	frag->is_free = 0;
+#endif
 
+#ifdef DBG_MALLOC
 	/* split the fragment if possible */
 	shm_frag_split(hpb, frag, size, hash, file, "fragm. from hp_malloc", line);
 	frag->file=file;
@@ -1398,6 +1417,16 @@ void *hp_shm_realloc(struct hp_block *hpb, void *p, unsigned long size)
 	return p;
 }
 
+#ifdef SHM_EXTRA_STATS
+void set_indexes(int core_index) {
+
+	struct hp_frag* f;
+	for (f=shm_block->first_frag; (char*)f<(char*)shm_block->last_frag; f=FRAG_NEXT(f))
+		if (!f->is_free)
+			f->statistic_index = core_index;
+}
+#endif
+
 void hp_status(struct hp_block *hpb)
 {
 	struct hp_frag *f;
@@ -1440,6 +1469,7 @@ void hp_status(struct hp_block *hpb)
 		if (!f->is_free)
 			if (dbg_ht_update(allocd, f->file, f->func, f->line, f->size) < 0) {
 				LM_ERR("Unable to update alloc'ed. memory summary\n");
+				dbg_ht_free(allocd);
 				return;
 			}
 

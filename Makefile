@@ -31,14 +31,6 @@
 #  2007-09-28  added db_berkeley (wiquan)
 #
 
-#FREERADIUS=1
-# freeradius libs check (must be done in toplevel makefile)
-ifneq ("$(wildcard /usr/include/freeradius-client.h)","")
-FREERADIUS=1
-else
-#FREERADIUS=0
-endif
-
 #SQLITE_BIND=1
 NICER?=1
 auto_gen=lex.yy.c cfg.tab.c   #lexx, yacc etc
@@ -55,16 +47,22 @@ skip_modules?=
 # whether or not to overwrite TLS certificates
 tls_overwrite_certs?=
 
+# default debian version when running 'make deb'
+DEBIAN_VERSION ?= jessie #TODO: can we determine this?
 
 makefile_defs=0
-DEFS:=
+DEFS:= $(DEFS_EXTRA_OPTS)
 DEBUG_PARSER?=
 
 # json libs check
+ifeq ($(JSONPATH),)
 ifneq ("$(wildcard /usr/include/json-c/json.h)","")
 DEFS += -I/usr/include/json-c
 else
 DEFS += -I/usr/include/json
+endif
+else
+DEFS += -I$(JSONPATH)
 endif
 
 # create the template only if the file is not yet created
@@ -72,6 +70,11 @@ ifeq (,$(wildcard Makefile.conf))
 $(shell cp Makefile.conf.template Makefile.conf)
 endif
 include Makefile.conf
+ifneq (,$(findstring SHM_EXTRA_STATS, $(DEFS)))
+MEM_STATS_HDR = mem/mem_stats.h
+deps_gen += $(MEM_STATS_HDR)
+auto_gen += mem/mem_stats.c
+endif
 include Makefile.sources
 include Makefile.defs
 
@@ -122,8 +125,7 @@ modules_names=$(patsubst modules/%, %.so, $(modules))
 modules_basenames=$(patsubst modules/%, %, $(modules))
 modules_full_path=$(join $(modules), $(addprefix /, $(modules_names)))
 
-ALLDEP=Makefile Makefile.sources Makefile.defs Makefile.rules Makefile.conf
-
+ALLDEP=Makefile Makefile.sources Makefile.defs Makefile.rules Makefile.conf $(deps_gen)
 
 install_docs := README-MODULES AUTHORS NEWS README
 ifneq ($(skip-install-doc),yes)
@@ -170,7 +172,7 @@ ifeq (,$(FASTER))
 endif
 	$(Q)$(LEX) $(LEX_FLAGS) $<
 
-cfg.tab.c cfg.tab.h: cfg.y  $(ALLDEP)
+cfg.tab.c cfg.tab.h: cfg.y $(ALLDEP)
 ifeq (,$(FASTER))
 	@echo "Generating parser"
 endif
@@ -178,6 +180,7 @@ endif
 
 .PHONY: all
 all: $(NAME) modules utils
+
 
 .PHONY: app
 app: $(NAME)
@@ -196,7 +199,7 @@ $(modules):
 		)
 
 .PHONY: modules
-modules:
+modules: $(deps_gen)
 ifeq (,$(FASTER))
 	@set -e; \
 	for r in $(modules) "" ; do \
@@ -429,17 +432,21 @@ bin:
 deb-orig-tar: tar
 	mv "$(NAME)-$(RELEASE)_src".tar.gz ../$(NAME)_$(RELEASE).orig.tar.gz
 
-.PHONY: deb
-deb:
+.PHONY: deb-%
+deb-%:
 	rm -rf debian
 	# dpkg-source cannot use links for debian source
-	cp -r packaging/debian debian
+	cp -r packaging/debian/common debian
+	[ "$@" = "deb-common" ] || cp -r packaging/debian/$(@:deb-%=%)/* debian
 	dpkg-buildpackage \
 		-I.git -I.gitignore \
 		-I*.swp -I*~ \
 		-i\\.git\|debian\|^\\.\\w+\\.swp\|lex\\.yy\\.c\|cfg\\.tab\\.\(c\|h\)\|\\w+\\.patch \
 		-rfakeroot -tc $(DEBBUILD_EXTRA_OPTIONS)
 	rm -rf debian
+
+.PHONY: deb
+deb: deb-$(DEBIAN_VERSION)
 
 
 .PHONY: sunpkg
@@ -496,12 +503,10 @@ mk-install-dirs: $(cfg_prefix)/$(cfg_dir) $(bin_prefix)/$(bin_dir) \
 install-cfg: $(cfg_prefix)/$(cfg_dir)
 		sed -e "s#/usr/.*lib/$(NAME)/modules/#$(modules_target)#g" \
 			< etc/$(NAME).cfg > $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample0
-		sed -e "s#/usr/.*etc/$(NAME)/tls/#$(cfg_target)tls/#g" \
+		umask 0077; sed -e "s#/usr/.*etc/$(NAME)/tls/#$(cfg_target)tls/#g" \
 			< $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample0 \
 			> $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample
 		rm -fr $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample0
-		chmod 600 $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample
-		chmod 700 $(cfg_prefix)/$(cfg_dir)
 		if [ -z "${skip_cfg_install}" -a \
 				! -f $(cfg_prefix)/$(cfg_dir)$(NAME).cfg ]; then \
 			mv -f $(cfg_prefix)/$(cfg_dir)$(NAME).cfg.sample \

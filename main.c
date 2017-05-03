@@ -119,6 +119,7 @@
 #include "script_cb.h"
 #include "dset.h"
 #include "blacklists.h"
+#include "xlog.h"
 
 #include "pt.h"
 #include "ut.h"
@@ -332,7 +333,8 @@ void cleanup(int show_status)
 #endif
 	cleanup_log_level();
 
-	if (pt) shm_free(pt);
+	if (mem_lock && pt)
+		shm_free(pt);
 	pt=0;
 	if (show_status){
 			LM_GEN1(memdump, "Memory status (shm):\n");
@@ -354,7 +356,7 @@ void cleanup(int show_status)
  * it's not in interactive mode and we don't want this. The non-daemonized
  * case can occur when an error is encountered before daemonize is called
  * (e.g. when parsing the config file) or when opensips is started in
- * "dont-fork" mode.
+ * "don't-fork" mode.
  * \param signum signal for killing the children
  */
 static void kill_all_children(int signum)
@@ -559,6 +561,10 @@ static void sig_usr(int signo)
 				break;
 			case SIGINT:
 			case SIGTERM:
+					/* if some shutdown already in progress, ignore this one */
+					if (sig_flag==0) sig_flag=signo;
+					else return;
+					/* do the termination */
 					LM_INFO("signal %d received\n", signo);
 					/* print memory stats for non-main too */
 					#ifdef PKG_MALLOC
@@ -669,13 +675,25 @@ static int main_loop(void)
 
 	/* fork all processes required by UDP network layer */
 	if (udp_start_processes( &chd_rank, startup_done)<0) {
-		LM_CRIT("cannot start TCP processes\n");
+		LM_CRIT("cannot start UDP processes\n");
 		goto error;
 	}
 
 	/* fork all processes required by TCP network layer */
 	if (tcp_start_processes( &chd_rank, startup_done)<0) {
 		LM_CRIT("cannot start TCP processes\n");
+		goto error;
+	}
+
+	/* fork for the extra timer processes */
+	if (start_timer_extra_processes( &chd_rank )!=0) {
+		LM_CRIT("cannot start timer extra process(es)\n");
+		goto error;
+	}
+
+	/* fork the TCP listening process */
+	if (tcp_start_listener()<0) {
+		LM_CRIT("cannot start TCP listener process\n");
 		goto error;
 	}
 
@@ -758,8 +776,36 @@ int main(int argc, char** argv)
 					};
 
 					break;
+			case 'm':
+					shm_mem_size=strtol(optarg, &tmp, 10) * 1024 * 1024;
+					if (tmp &&(*tmp)){
+						LM_ERR("bad shmem size number: -m %s\n", optarg);
+						goto error00;
+					};
+					break;
+			case 'u':
+					user=optarg;
+					break;
+			case 'g':
+					group=optarg;
+					break;
 		}
 	}
+
+	/* get uid/gid */
+	if (user){
+		if (user2uid(&uid, &gid, user)<0){
+			LM_ERR("bad user name/uid number: -u %s\n", user);
+			goto error00;
+		}
+	}
+	if (group){
+		if (group2gid(&gid, group)<0){
+			LM_ERR("bad group name/gid number: -u %s\n", group);
+			goto error00;
+		}
+	}
+
 	/*init pkg mallocs (before parsing cfg but after parsing cmd line !)*/
 	if (init_pkg_mallocs()==-1)
 		goto error00;
@@ -783,11 +829,7 @@ int main(int argc, char** argv)
 					cfg_log_stderr=1; /* force stderr logging */
 					break;
 			case 'm':
-					shm_mem_size=strtol(optarg, &tmp, 10) * 1024 * 1024;
-					if (tmp &&(*tmp)){
-						LM_ERR("bad shmem size number: -m %s\n", optarg);
-						goto error00;
-					};
+					/* ignoring it, parsed previously */
 					break;
 			case 'M':
 					/* ignoring it, parsed previously */
@@ -876,10 +918,10 @@ int main(int argc, char** argv)
 					chroot_dir=optarg;
 					break;
 			case 'u':
-					user=optarg;
+					/* ignoring it, parsed previously */
 					break;
 			case 'g':
-					group=optarg;
+					/* ignoring it, parsed previously */
 					break;
 			case 'P':
 					pid_file=optarg;
@@ -955,21 +997,7 @@ try_again:
 	yydebug = 1;
 #endif
 
-		/* get uid/gid */
-	if (user){
-		if (user2uid(&uid, &gid, user)<0){
-			LM_ERR("bad user name/uid number: -u %s\n", user);
-			goto error00;
-		}
-	}
-	if (group){
-		if (group2gid(&gid, group)<0){
-			LM_ERR("bad group name/gid number: -u %s\n", group);
-			goto error00;
-		}
-	}
-
-		/*init shm mallocs
+	/*  init shm mallocs
 	 *  this must be here
 	 *     -to allow setting shm mem size from the command line
 	 *     -it must be also before init_timer and init_tcp
@@ -1019,7 +1047,7 @@ try_again:
 		LM_ERR("cannot load transport protocols\n");
 		goto error;
 	} else if (protos_no == 0) {
-		LM_ERR("no trasnport protocol loaded\n");
+		LM_ERR("no transport protocol loaded\n");
 		goto error;
 	} else
 		LM_DBG("Loaded %d transport protocols\n", protos_no);
@@ -1179,6 +1207,12 @@ try_again:
 	/* init modules */
 	if (init_modules() != 0) {
 		LM_ERR("error while initializing modules\n");
+		goto error;
+	}
+
+	/* init xlog */
+	if (init_xlog() < 0) {
+		LM_ERR("error while initializing xlog!\n");
 		goto error;
 	}
 

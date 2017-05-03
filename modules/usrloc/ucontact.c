@@ -49,6 +49,8 @@
 #include "ureplication.h"
 #include "udomain.h"
 #include "dlist.h"
+#include "utime.h"
+#include "usrloc.h"
 
 extern event_id_t ei_c_update_id;
 
@@ -97,15 +99,20 @@ ucontact_t*
 new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 {
 	struct sip_uri tmp_uri;
-
+	size_t att_data_sz;
 	ucontact_t *c;
 
-	c = (ucontact_t*)shm_malloc(sizeof(ucontact_t));
+	att_data_sz = get_att_ct_data_sz();
+
+	c = (ucontact_t*)shm_malloc(sizeof(ucontact_t) + att_data_sz);
 	if (!c) {
 		LM_ERR("no more shm memory\n");
 		return NULL;
 	}
-	memset(c, 0, sizeof(ucontact_t));
+	memset(c, 0, sizeof(ucontact_t) + att_data_sz);
+
+	if (att_data_sz > 0)
+		c->attached_data = (void **)(c + 1);
 
 	if (parse_uri(_contact->s, _contact->len, &tmp_uri) < 0) {
 		LM_ERR("contact [%.*s] is not valid! Will not store it!\n",
@@ -116,7 +123,9 @@ new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 
 	if (shm_str_dup( &c->c, _contact) < 0) goto mem_error;
 	if (shm_str_dup( &c->callid, _ci->callid) < 0) goto mem_error;
-	if (shm_str_dup( &c->user_agent, _ci->user_agent) < 0) goto mem_error;
+
+	/* an additional null byte may be needed by "regexec" later on */
+	if (shm_nt_str_dup( &c->user_agent, _ci->user_agent) < 0) goto mem_error;
 
 	if (_ci->received.s && _ci->received.len) {
 		if (shm_str_dup( &c->received, &_ci->received) < 0) goto mem_error;
@@ -134,9 +143,13 @@ new_ucontact(str* _dom, str* _aor, str* _contact, ucontact_info_t* _ci)
 		if (shm_str_dup( &c->attr, _ci->attr) < 0) goto mem_error;
 	}
 
+	get_act_time();
+
 	c->domain = _dom;
 	c->aor = _aor;
 	c->expires = _ci->expires;
+	c->expires_in = _ci->expires - act_time;
+	c->expires_out = _ci->expires_out;
 	c->q = _ci->q;
 	c->sock = _ci->sock;
 	c->cseq = _ci->cseq;
@@ -250,10 +263,11 @@ void print_ucontact(FILE* _f, ucontact_t* _c)
  */
 int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 {
-#define update_str(_old,_new) \
+	/* "user_agent" must be null-terminated (see e5cb9805b) */
+#define update_str(_old,_new,_nt) \
 	do{\
 		if ((_old)->len < (_new)->len) { \
-			ptr = (char*)shm_malloc((_new)->len); \
+			ptr = shm_malloc((_new)->len + ((_nt) ? 1 : 0)); \
 			if (ptr == 0) { \
 				LM_ERR("no more shm memory\n"); \
 				return -1; \
@@ -265,6 +279,8 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 			memcpy((_old)->s, (_new)->s, (_new)->len);\
 		}\
 		(_old)->len = (_new)->len;\
+		if (_nt) \
+			(_old)->s[(_old)->len] = '\0'; \
 	} while(0)
 
 	char* ptr;
@@ -273,12 +289,12 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	 * the same Call-ID header field value for registrations sent
 	 * to a particular registrar.', but it is not a 'MUST'. So
 	 * always update the call ID to be safe. */
-	update_str( &_c->callid, _ci->callid);
+	update_str( &_c->callid, _ci->callid, 0);
 
-	update_str( &_c->user_agent, _ci->user_agent);
+	update_str( &_c->user_agent, _ci->user_agent, 1);
 
 	if (_ci->received.s && _ci->received.len) {
-		update_str( &_c->received, &_ci->received);
+		update_str( &_c->received, &_ci->received, 0);
 	} else {
 		if (_c->received.s) shm_free(_c->received.s);
 		_c->received.s = 0;
@@ -286,7 +302,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	}
 
 	if (_ci->path) {
-		update_str( &_c->path, _ci->path);
+		update_str( &_c->path, _ci->path, 0);
 	} else {
 		if (_c->path.s) shm_free(_c->path.s);
 		_c->path.s = 0;
@@ -294,15 +310,19 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 	}
 
 	if (_ci->attr && _ci->attr->s && _ci->attr->len) {
-		update_str( &_c->attr, _ci->attr);
+		update_str( &_c->attr, _ci->attr, 0);
 	} else {
 		if (_c->attr.s) shm_free(_c->attr.s);
 		_c->attr.s = 0;
 		_c->attr.len = 0;
 	}
 
+	get_act_time();
+
 	_c->sock = _ci->sock;
 	_c->expires = _ci->expires;
+	_c->expires_in = _ci->expires - act_time;
+	_c->expires_out = _ci->expires_out;
 	_c->q = _ci->q;
 	_c->cseq = _ci->cseq;
 	_c->methods = _ci->methods;
@@ -314,8 +334,7 @@ int mem_update_ucontact(ucontact_t* _c, ucontact_info_t* _ci)
 		LM_ERR("failed to resolve next hop. keeping old one - '%.*s'\n",
 		        _c->next_hop.name.len, _c->next_hop.name.s);
 
-	ul_raise_contact_event(ei_c_update_id, &_c->c, &_c->callid,
-			&_c->received, _c->aor, _c->cseq);
+	ul_raise_contact_event(ei_c_update_id, _c);
 
 	return 0;
 }

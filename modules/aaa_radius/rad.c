@@ -28,10 +28,16 @@
  * This is the Radius implementation for the generic AAA Interface.
  */
 
-#ifndef USE_FREERADIUS
-	#include <radiusclient-ng.h>
-#else
+#ifdef FREERADIUS
 	#include <freeradius-client.h>
+#else
+	#ifdef RADCLI
+		#include <radcli/radcli.h>
+	#else
+		#ifdef RADIUSCLIENT
+			#include <radiusclient-ng.h>
+		#endif
+	#endif
 #endif
 
 #ifndef REJECT_RC
@@ -45,6 +51,33 @@
 #include "rad.h"
 #include "../../ut.h"
 #include "../../usr_avp.h"
+#include "../../resolve.h"
+
+/**
+ * this function is removed from current versions
+ * of FREERADIUS-CLIENT and RADCLI because it only offers
+ * support for IPv4
+ * but since the whole code is built around IPv4 we will
+ * implement it only for IPv4 usage
+ */
+#ifdef RADCLI
+uint32_t rc_get_ipaddr (char *host)
+{
+	const struct hostent* he;
+	struct in_addr** addr_list;
+
+	he=resolvehost(host, 0/*do test if is ip*/);
+
+	/* FIXME the function is not for IPV6 */
+	addr_list = (struct in_addr **)he->h_addr_list;
+	if (addr_list[0])
+		return addr_list[0]->s_addr;
+
+	return 0;
+
+}
+#endif
+
 
 
 /*
@@ -315,7 +348,8 @@ int rad_find(aaa_conn* rh, aaa_map *map, int flag) {
 				map->value = val_result->value;
 				return 0;
 			}
-			return 1;
+			/* not found */
+			return -1;
 		case AAA_DICT_FIND_ATTR:
 			attr_result = rc_dict_findattr(rh, map->name);
 			if (attr_result) {
@@ -323,14 +357,18 @@ int rad_find(aaa_conn* rh, aaa_map *map, int flag) {
 				map->type = attr_result->type;
 				return 0;
 			}
-			return 1;
+
+			/* not found */
+			return -1;
 		case AAA_DICT_FIND_VEND:
 			vend_result = rc_dict_findvend(rh, map->name);
 			if (vend_result) {
 				map->value = vend_result->vendorpec;
 				return 0;
 			}
-			return 1;
+
+			/* not found */
+			return -1;
 	}
 
 	LM_ERR("failure\n");

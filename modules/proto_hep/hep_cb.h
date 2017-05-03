@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2015 - OpenSIPS Foundation
- * Copyright (C) 2001-2003 FhG Fokus
+ * Copyright (C) 2015 - OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -29,7 +28,7 @@
 #include "hep.h"
 #include "../../sr_module.h"
 
-
+enum homer_versions { HOMER5 = 5, HOMER6 = 6 };
 typedef int (*hep_cb_t)(void);
 
 
@@ -37,6 +36,11 @@ typedef int (*hep_cb_t)(void);
  * to know the hep_desc structure in which you receive all hep
  * headers and also the sip payload */
 typedef int (*register_hep_cb_t)(hep_cb_t cb);
+
+/* export homer version
+ * this will help in order to know table definitions and homer dependent stuff
+ */
+typedef int (*get_homer_version_t)(void);
 
 /*
  * receive message in hep route
@@ -46,9 +50,9 @@ typedef int (*register_hep_cb_t)(hep_cb_t cb);
  */
 
 typedef struct proto_hep_api {
-	register_hep_cb_t register_hep_cb;
-	pack_hep_t		  pack_hep;
-	get_hep_ctx_id_t  get_hep_ctx_id;
+	register_hep_cb_t	 register_hep_cb;
+	get_hep_ctx_id_t	 get_hep_ctx_id;
+	get_homer_version_t	 get_homer_version;
 } proto_hep_api_t;
 
 

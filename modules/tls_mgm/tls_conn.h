@@ -1,4 +1,4 @@
-/* 
+/*
  * File:   tls_conn.h
  * Author: razvan
  *
@@ -24,6 +24,38 @@ static void tls_print_errstack(void)
 	while ((code = ERR_get_error())) {
 		LM_ERR("TLS errstack: %s\n", ERR_error_string(code, 0));
 	}
+}
+
+static int tls_get_errstack( char* result, int size )
+{
+	int len = 0, new, code;
+
+	if ( !result || !size )
+		return 0;
+
+
+	while ((code = ERR_get_error())) {
+		/* in case we overflow the buffer we still need to report the error
+		 * to syslog */
+		if ( len < size ) {
+			new = snprintf( result + len, size - len,
+						"%s\n", ERR_error_string( code, 0) );
+			LM_ERR("TLS errstack: %s\n", result + len);
+		} else {
+			/* even though there s no place in the buffer we still have
+			 * to print the errors */
+			LM_ERR("TLS errstack: %s\n", ERR_error_string(code, 0));
+			continue;
+		}
+
+		if ( new < size ) {
+			len += new;
+		} else {
+			len = size;
+		}
+	}
+
+	return len;
 }
 
 /*

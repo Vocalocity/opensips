@@ -293,45 +293,28 @@ static struct lump* delete_existing_contact(struct sip_msg *msg)
 {
 	int offset;
 	int len;
-	struct lump* lump, *crt, *prev_crt =0, *a, *foo;
+	struct lump* lump, *crt;
 
 	offset = msg->contact->body.s - msg->buf;
 	len = msg->contact->body.len;
 
-	for (crt = msg->add_rm;crt;) {
+	for (crt = msg->add_rm; crt; crt = crt->next) {
 		if (crt->type == HDR_CONTACT_T && crt->op == LUMP_DEL &&
 				crt->u.offset >= offset && crt->u.offset <= offset + len) {
-			lump = crt;
-			crt = crt->next;
-			a=lump->before;
-			while(a) {
-				foo=a; a=a->before;
-				if (!(foo->flags&LUMPFLAG_SHMEM))
-					free_lump(foo);
-				if (!(foo->flags&LUMPFLAG_SHMEM))
-					pkg_free(foo);
-			}
+			/*
+			 * we do not delete the lump because there might be pointers (such
+			 * as contact->uri from the fix_nated_contact() function pointing
+			 * to the lump's buffer; instead we simply replace the lump with a
+			 * conditional false one
+			 */
+			/* mark DEL lump as NOP and add COND_FALSE for before and after */
+			crt->op = LUMP_NOP;
 
-			a=lump->after;
-			while(a) {
-				foo=a; a=a->after;
-				if (!(foo->flags&LUMPFLAG_SHMEM))
-					free_lump(foo);
-				if (!(foo->flags&LUMPFLAG_SHMEM))
-					pkg_free(foo);
-			}
-			if(lump == msg->add_rm)
-				msg->add_rm = lump->next;
-			else
-				prev_crt->next = lump->next;
-			if (!(lump->flags&LUMPFLAG_SHMEM))
-				free_lump(lump);
-			if (!(lump->flags&LUMPFLAG_SHMEM))
-				pkg_free(lump);
-			continue;
+			if (crt->after)
+				insert_cond_lump_after(crt, COND_FALSE, 0);
+			if (crt->before)
+				insert_cond_lump_before(crt, COND_FALSE, 0);
 		}
-		prev_crt = crt;
-		crt= crt->next;
 	}
 
 	if ((lump = del_lump(msg, msg->contact->body.s - msg->buf, msg->contact->body.len,HDR_CONTACT_T)) == 0) {
@@ -366,6 +349,7 @@ static int topo_dlg_replace_contact(struct sip_msg* msg, struct dlg_cell* dlg)
 
 	prefix_len = 5; /* <sip: */
 
+	memset(&ctu, 0, sizeof(ctu));
 	if (dlg_api.is_mod_flag_set(dlg,TOPOH_KEEP_USER)) {
 		if ( parse_contact(msg->contact)<0 ||
 			((contact_body_t *)msg->contact->parsed)->contacts==NULL ||
@@ -375,15 +359,24 @@ static int topo_dlg_replace_contact(struct sip_msg* msg, struct dlg_cell* dlg)
 			contact = ((contact_body_t *)msg->contact->parsed)->contacts->uri;
 			if(parse_uri(contact.s, contact.len, &ctu) < 0) {
 				LM_ERR("Bad Contact URI\n");
+				if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER))
+					prefix_len += RR_DLG_PARAM_SIZE + 1;
 			} else {
 				ct_username = ctu.user.s;
 				ct_username_len = ctu.user.len;
 				LM_DBG("Trying to propagate username [%.*s]\n",ct_username_len,
 									ct_username);
-				if (ct_username_len > 0)
+				if (ct_username_len > 0) {
 					prefix_len += 1 + /* @ */ + ct_username_len;
+					if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER))
+						prefix_len += RR_DLG_PARAM_SIZE;
+				} else if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER)) {
+					prefix_len += RR_DLG_PARAM_SIZE + 1;
+				}
 			}
 		}
+	} else if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER)) {
+		prefix_len += RR_DLG_PARAM_SIZE + 1;
 	}
 
 	prefix = pkg_malloc(prefix_len);
@@ -392,7 +385,10 @@ static int topo_dlg_replace_contact(struct sip_msg* msg, struct dlg_cell* dlg)
 		goto error;
 	}
 
-	suffix_len = RR_DLG_PARAM_SIZE+1; /* > */
+	if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER))
+		suffix_len = 1; /* > */
+	else
+		suffix_len = RR_DLG_PARAM_SIZE+1; /* > */
 	if (th_param_list) {
 		if ( parse_contact(msg->contact)<0 ||
 			((contact_body_t *)msg->contact->parsed)->contacts==NULL ||
@@ -449,28 +445,59 @@ static int topo_dlg_replace_contact(struct sip_msg* msg, struct dlg_cell* dlg)
 		goto error;
 	}
 
-	memcpy(prefix,"<sip:",prefix_len);
-	if (dlg_api.is_mod_flag_set(dlg,TOPOH_KEEP_USER) && ct_username_len > 0) {
-		memcpy(prefix+5,ct_username,ct_username_len);
-		prefix[prefix_len-1] = '@';
-	}
-
 	rr_param = dlg_api.get_rr_param();
+
+	p = prefix;
+	memcpy( p, "<sip:", 5);
+	p += 5;
+	if (dlg_api.is_mod_flag_set(dlg,TOPOH_KEEP_USER) && ct_username_len > 0) {
+		memcpy( p, ct_username, ct_username_len);
+		p += ct_username_len;
+	}
+	if (dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER)) {
+		if (p==prefix+5)
+			*(p++) = 'X';
+		/* add '.' */
+		*(p++) = DLG_SEPARATOR;
+		/* add "did" */
+		memcpy(p,rr_param->s,rr_param->len);
+		p+=rr_param->len;
+		/* add '.' */
+		*(p++) = DLG_SEPARATOR;
+		/* add hash entry as hexa */
+		n = RR_DLG_PARAM_SIZE - (p-prefix);
+		if (int2reverse_hex( &p, &n, dlg->h_entry)==-1)
+			return -1;
+		/* add '.' */
+		*(p++) = DLG_SEPARATOR;
+		/* add hash entry as hexa */
+		n = RR_DLG_PARAM_SIZE - (p-prefix);
+		if (int2reverse_hex( &p, &n, dlg->h_id)==-1)
+			return -1;
+	}
+	if (p!=prefix+5)
+		*(p++) = '@';
+
+	prefix_len = p - prefix;
+
 	p_init = p = suffix;
-	*p++ = ';';
-	memcpy(p,rr_param->s,rr_param->len);
-	p+=rr_param->len;
-	*p++ = '=';
 
-	n = RR_DLG_PARAM_SIZE - (p-p_init);
-	if (int2reverse_hex( &p, &n, dlg->h_entry)==-1)
-		return -1;
+	if (!dlg_api.is_mod_flag_set(dlg,TOPOH_DID_IN_USER)) {
+		*p++ = ';';
+		memcpy(p,rr_param->s,rr_param->len);
+		p+=rr_param->len;
+		*p++ = '=';
 
-	*(p++) = DLG_SEPARATOR;
+		n = RR_DLG_PARAM_SIZE - (p-p_init);
+		if (int2reverse_hex( &p, &n, dlg->h_entry)==-1)
+			return -1;
 
-	n = RR_DLG_PARAM_SIZE - (p-p_init);
-	if (int2reverse_hex( &p, &n, dlg->h_id)==-1)
-		return -1;
+		*(p++) = DLG_SEPARATOR;
+
+		n = RR_DLG_PARAM_SIZE - (p-p_init);
+		if (int2reverse_hex( &p, &n, dlg->h_id)==-1)
+			return -1;
+	}
 
 	if (th_param_list) {
 		for (el=th_param_list;el;el=el->next) {
@@ -876,6 +903,11 @@ static int topo_hiding_no_dlg(struct sip_msg *req,struct cell* t,int extra_flags
 	else
 		used_cb = th_no_dlg_onreply;
 
+	if (extra_flags & TOPOH_HIDE_CALLID)
+		LM_WARN("Cannot hide callid when dialog support is not engaged!\n");
+	if (extra_flags & TOPOH_DID_IN_USER)
+		LM_WARN("Cannot store DID in user when dialog support is not engaged!\n");
+
 	if (tm_api.register_tmcb( req, 0, TMCB_RESPONSE_FWDED,
 	used_cb,NULL, NULL)<0 ) {
 		LM_ERR("failed to register TMCB\n");
@@ -982,6 +1014,14 @@ static void topo_dlg_onroute (struct dlg_cell* dlg, int type,
 
 	if (!req) {
 		LM_ERR("Called with NULL SIP message \n");
+		return;
+	}
+
+	/* we also may end up here via TERMINATE event triggered by internal
+	 * dlg termination -> the requests we have here are dummy, so nothing
+	 * to be done */
+	if (req->via1==NULL) {
+		LM_DBG("dummy request identified, skipping...\n");
 		return;
 	}
 
@@ -1675,7 +1715,7 @@ static int topo_no_dlg_encode_contact(struct sip_msg *msg,int flags)
 
 	if (!(lump = delete_existing_contact(msg))) {
 		LM_ERR("Failed to delete existing contact \n");
-		goto error;	
+		goto error;
 	}
 
 	prefix_len = 5; /* <sip: */
@@ -1704,7 +1744,7 @@ static int topo_no_dlg_encode_contact(struct sip_msg *msg,int flags)
 		LM_ERR("no more pkg\n");
 		goto error;
 	}
-	memcpy(prefix,"<sip:",prefix_len);
+	memcpy(prefix,"<sip:",5);
 	if (flags & TOPOH_KEEP_USER && ct_username_len > 0) {
 		memcpy(prefix+5,ct_username,ct_username_len);
 		prefix[prefix_len-1] = '@';

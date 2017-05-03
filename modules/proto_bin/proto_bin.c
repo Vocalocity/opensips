@@ -57,7 +57,7 @@ static int bin_port = 5555;
 static int bin_send_timeout = 100;
 static struct tcp_req bin_current_req;
 static int bin_max_msg_chunks = 32;
-static int bin_async = 0;
+static int bin_async = 1;
 static int bin_async_max_postponed_chunks = 32;
 static int bin_async_local_connect_timeout = 100;
 static int bin_async_local_write_timeout = 10;
@@ -263,8 +263,8 @@ again:
 		buf += n;
 		len -= n;
 	} else {
-		/* succesful write from the first try */
-		LM_DBG("Async succesful write from first try on %p\n",c);
+		/* successful write from the first try */
+		LM_DBG("Async successful write from first try on %p\n",c);
 		return len;
 	}
 
@@ -283,7 +283,7 @@ poll_loop:
 			LM_ERR("Failed to add write chunk to connection \n");
 			return -1;
 		} else {
-			/* we have succesfully added async write chunk
+			/* we have successfully added async write chunk
 			 * tell MAIN to poll out for us */
 			LM_DBG("Data still pending for write on conn %p\n",c);
 			return 0;
@@ -522,7 +522,7 @@ static int proto_bin_send(struct socket_info* send_sock,
 
 	if (n<0) {
 		/* error during conn get, return with error too */
-		LM_ERR("failed to aquire connection\n");
+		LM_ERR("failed to acquire connection\n");
 		return -1;
 	}
 
@@ -545,10 +545,12 @@ static int proto_bin_send(struct socket_info* send_sock,
 			}
 			/* connect succeeded, we have a connection */
 			if (n==0) {
+				/* mark the ID of the used connection (tracing purposes) */
+				last_outgoing_tcp_id = c->id;
 				/* connect is still in progress, break the sending
 				 * flow now (the actual write will be done when 
 				 * connect will be completed */
-				LM_DBG("Succesfully started async connection \n");
+				LM_DBG("Successfully started async connection \n");
 				tcp_conn_release(c, 0);
 				return len;
 			}
@@ -581,7 +583,10 @@ static int proto_bin_send(struct socket_info* send_sock,
 				return -1;
 			}
 
-			/* we succesfully added our write chunk - success */
+			/* mark the ID of the used connection (tracing purposes) */
+			last_outgoing_tcp_id = c->id;
+
+			/* we successfully added our write chunk - success */
 			tcp_conn_release(c, 0);
 			return len;
 		} else {
@@ -615,43 +620,11 @@ send_it:
 	if (c->proc_id != process_no)
 		close(fd);
 
+	/* mark the ID of the used connection (tracing purposes) */
+	last_outgoing_tcp_id = c->id;
+
 	tcp_conn_release(c, (n<len)?1:0/*pending data in async mode?*/ );
 	return n;
-}
-
-int tcp_read(struct tcp_connection *c,struct tcp_req *r) {
-	int bytes_free, bytes_read;
-	int fd;
-
-	fd = c->fd;
-	bytes_free=TCP_BUF_SIZE- (int)(r->pos - r->buf);
-
-	if (bytes_free==0){
-		LM_ERR("buffer overrun, dropping\n");
-		r->error=TCP_REQ_OVERRUN;
-		return -1;
-	}
-again:
-	bytes_read=read(fd, r->pos, bytes_free);
-
-	if(bytes_read==-1){
-		if (errno == EWOULDBLOCK || errno == EAGAIN){
-			return 0; /* nothing has been read */
-		}else if (errno == EINTR) goto again;
-		else{
-			LM_ERR("error reading: %s\n",strerror(errno));
-			r->error=TCP_READ_ERROR;
-			return -1;
-		}
-	}else if (bytes_read==0){
-		c->state=S_CONN_EOF;
-		LM_DBG("EOF on %p, FD %d\n", c, fd);
-	}
-#ifdef EXTRA_DEBUG
-	LM_DBG("read %d bytes:\n%.*s\n", bytes_read, bytes_read, r->pos);
-#endif
-	r->pos+=bytes_read;
-	return bytes_read;
 }
 
 static int bin_handle_req(struct tcp_req *req,
@@ -660,7 +633,7 @@ static int bin_handle_req(struct tcp_req *req,
 	long size;
 
 	if (req->complete){
-		/* update the timeout - we succesfully read the request */
+		/* update the timeout - we successfully read the request */
 		tcp_conn_set_lifetime( con, tcp_con_lifetime);
 		con->timeout = con->lifetime;
 
@@ -757,12 +730,19 @@ error:
 }
 
 static void bin_parse_headers(struct tcp_req *req){
-	unsigned short  *px;
+	unsigned int  *px;
 	if(req->content_len == 0 && req->pos - req->buf < HEADER_SIZE){
 		req->parsed = req->pos;
 		return;
 	}
-	px = (unsigned short*)(req->buf + MARKER_SIZE);
+
+	if (!is_valid_bin_packet(req->buf)) {
+		LM_ERR("Invalid packet marker, got %.4s\n", req->buf);
+		req->error = TCP_REQ_BAD_LEN;
+		return;
+	}
+
+	px = (unsigned int*)(req->buf + MARKER_SIZE);
 	req->content_len = (*px);
 	if(req->pos - req->buf == req->content_len){
 		LM_DBG("received a COMPLETE message\n");
@@ -803,7 +783,7 @@ static int bin_read_req(struct tcp_connection* con, int* bytes_read){
 		if (req->parsed < req->pos){
 			bytes=0;
 		} else {
-			bytes=tcp_read(con,req);
+			bytes=proto_tcp_read(con,req);
 			if (bytes < 0) {
 				LM_ERR("failed to read \n");
 				goto error;
@@ -879,7 +859,7 @@ again:
 			/* report back we have more writting to be done */
 			return 1;
 		} else {
-			LM_ERR("Error occured while sending async chunk %d (%s)\n",
+			LM_ERR("Error occurred while sending async chunk %d (%s)\n",
 				   errno,strerror(errno));
 			/* report the conn as broken */
 			return -1;

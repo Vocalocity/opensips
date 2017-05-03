@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2015 - OpenSIPS Foundation
- * Copyright (C) 2001-2003 FhG Fokus
+ * Copyright (C) 2015 - OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -27,6 +26,14 @@
 #define _HEP_H
 
 #include "../../ip_addr.h"
+#include "../../trace_api.h"
+
+/* first and last version of hep protocol */
+#define HEP_FIRST 1
+#define HEP_LAST  3
+
+#define HEP_PORT 9060
+#define HEP_PORT_STR "9060"
 
 #define HEP_HEADER_ID "\x48\x45\x50\x33"
 #define HEP_HEADER_ID_LEN (sizeof(HEP_HEADER_ID) - 1)
@@ -40,6 +47,9 @@
 
 #define HEP_OPENSIPS_VENDOR_ID 0x0003
 
+#define HEP_PROTO_TYPE_SIP 0x01
+#define HEP_PROTO_TYPE_XLOG 0x056
+
 enum hep_generic_chunks { HEP_PROTO_FAMILY=0x0001, HEP_PROTO_ID=0x0002,
 	HEP_IPV4_SRC=0x0003, HEP_IPV4_DST=0x0004, HEP_IPV6_SRC=0x0005,
 	HEP_IPV6_DST=0x0006, HEP_SRC_PORT=0x0007, HEP_DST_PORT=0x0008,
@@ -47,6 +57,7 @@ enum hep_generic_chunks { HEP_PROTO_FAMILY=0x0001, HEP_PROTO_ID=0x0002,
 	HEP_AGENT_ID=0x000C, HEP_KEEP_ALIVE=0x000D, HEP_AUTH_KEY=0x000E,
 	HEP_PAYLOAD=0x000F, HEP_COMPRESSED_PAYLOAD=0x0010,
 	HEP_CORRELATION_ID=0x0011, HEP_VLAN_ID=0x0012};
+#define HEP_EXTRA_CORRELATION 101
 
 #define HEP_STRUCT_CHUNKS ((1<<HEP_PROTO_FAMILY)|(1<<HEP_PROTO_ID)|           \
 		(1<<HEP_IPV4_SRC)|(1<<HEP_IPV4_DST)|(1<<HEP_IPV6_SRC)|                \
@@ -54,9 +65,10 @@ enum hep_generic_chunks { HEP_PROTO_FAMILY=0x0001, HEP_PROTO_ID=0x0002,
 		(1<<HEP_TIMESTAMP)|(1<<HEP_TIMESTAMP_US)|(1<<HEP_PROTO_TYPE)|         \
 		(1<<HEP_AGENT_ID)|(1<<HEP_PAYLOAD)|(1<<HEP_COMPRESSED_PAYLOAD))
 
-#define CHUNK_IS_GENERIC(_cid) (_cid>=HEP_MIN_INDEX || _cid<=HEP_MAX_INDEX)
+#define CHUNK_IS_GENERIC(_cid) (_cid>=HEP_MIN_INDEX && _cid<=HEP_MAX_INDEX)
 
-#define CHUNK_IS_IN_HEPSTRUCT(_cid) ((1<<_cid)&HEP_STRUCT_CHUNKS)
+#define CHUNK_IS_IN_HEPSTRUCT(_cid) (CHUNK_IS_GENERIC(_cid) && \
+						((1<<_cid)&HEP_STRUCT_CHUNKS))
 
 /* HEPv3 types */
 
@@ -199,7 +211,7 @@ struct hep_desc {
 				struct hep_ip6hdr hep_ip6header;
 			} addr;
 
-			char *payload;
+			str payload;
 		} hepv12;
 
 		/* hepv3 describing structure */
@@ -221,6 +233,9 @@ struct hep_desc {
 			generic_chunk_t* chunk_list;
 		} hepv3;
 	} u;
+
+	void* correlation;
+	void* fPayload; /* formatted payload */
 };
 
 
@@ -230,17 +245,39 @@ struct hep_context {
 	int resume_with_sip;
 };
 
-int pack_hep(union sockaddr_union* from_su, union sockaddr_union* to_su,
-		int proto, char *payload, int plen, int hep_version,
-		char **retbuf, int *retlen);
+/*
+ * structure used for storing hep id's
+ * hid = hep_id
+ */
+typedef struct _hid_list {
+	str name;
+
+	str ip;
+
+	unsigned int port_no;
+	str port;
+
+	unsigned int version;
+	int transport;
+
+	struct _hid_list* next;
+} hid_list_t, *hid_list_p;
+
 int unpack_hepv12(char *buf, int len, struct hep_desc* h);
 int unpack_hepv3(char *buf, int len, struct hep_desc *h);
 int unpack_hep(char *buf, int len, int version, struct hep_desc* h);
+void free_extra_chunks(struct hep_desc* h);
 
+int parse_hep_id(unsigned int type, void *val);
 
-typedef int (*pack_hep_t)(union sockaddr_union* from_su, union sockaddr_union* to_su,
-		int proto, char *payload, int plen, int hep_version,
-		char **retbuf, int *retlen);
+int hep_bind_trace_api(trace_proto_t* prot);
+
 typedef int (*get_hep_ctx_id_t)(void);
+unsigned char* generate_hep_gid(char* cookie);
+
+int correlate_w(struct sip_msg*, char* hep_id,
+		char* type1, char* correlation1,
+		char* type2, char* correlation2);
+int correlate_fixup(void** param, int param_no);
 #endif
 

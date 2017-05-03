@@ -21,6 +21,11 @@ cscope*
 # /menuconfig/
 /menuconfig/configure
 /Makefile.conf
+<<<<<<< HEAD
+=======
+/mem/mem_stats.c
+/mem/mem_stats.h
+>>>>>>> c5928a643f7916654f24720656667165545c874f
 
 # /utils/opensipsunix/
 /utils/opensipsunix/opensipsunix

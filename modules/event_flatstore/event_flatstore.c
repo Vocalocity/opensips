@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 OpenSIPS Project
+ * Copyright (C) 2015 OpenSIPS Project
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -28,6 +28,7 @@
 #include <libgen.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 
 #include "event_flatstore.h"
 #include "../../mem/mem.h"
@@ -62,7 +63,7 @@ static struct iovec *io_param ;
 static struct flat_socket **list_files;
 static struct flat_deleted **list_deleted_files;
 static gen_lock_t *global_lock;
-static int initial_capacity;
+static int initial_capacity = FLAT_DEFAULT_MAX_FD;
 static str file_permissions;
 static mode_t file_permissions_oct;
 
@@ -139,8 +140,8 @@ static int mod_init(void) {
 	}
 
     if (initial_capacity <= 0 || initial_capacity > 65535) {
-		LM_WARN("wrong maximum open sockets according to the modparam configuration\n");
-		initial_capacity = 100;
+		LM_WARN("bad value for maximum open sockets (%d)\n", initial_capacity);
+		initial_capacity = FLAT_DEFAULT_MAX_FD;
 	} else
 		LM_DBG("Number of files descriptors was set at %d\n", initial_capacity);
 
@@ -540,7 +541,7 @@ static int flat_raise(struct sip_msg *msg, str* ev_name,
 		for (param = params->first; param; param = param->next) {
 
 			if(idx + 3 > cap_params){
-				pkg_realloc(io_param, (cap_params + 20) * sizeof(struct iovec));
+				io_param = pkg_realloc(io_param, (cap_params + 20) * sizeof(struct iovec));
 				cap_params += 20;
 			}
 

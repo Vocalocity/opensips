@@ -193,6 +193,7 @@ int run_top_route(struct action* a, struct sip_msg* msg)
 	int bk_action_flags;
 	int bk_rec_lev;
 	int ret;
+	context_p ctx = NULL;
 
 	bk_action_flags = action_flags;
 	bk_rec_lev = rec_lev;
@@ -201,6 +202,15 @@ int run_top_route(struct action* a, struct sip_msg* msg)
 	rec_lev = 0;
 	init_err_info();
 
+	if (current_processing_ctx==NULL) {
+		if ( (ctx=context_alloc(CONTEXT_GLOBAL))==NULL) {
+			LM_ERR("failed to allocated new global context\n");
+			return -1;
+		}
+		memset( ctx, 0, context_size(CONTEXT_GLOBAL));
+		current_processing_ctx = ctx;
+	}
+
 	run_actions(a, msg);
 	ret = action_flags;
 
@@ -208,6 +218,12 @@ int run_top_route(struct action* a, struct sip_msg* msg)
 	rec_lev = bk_rec_lev;
 	/* reset script tracing */
 	use_script_trace = 0;
+
+	if (ctx && current_processing_ctx) {
+		context_destroy(CONTEXT_GLOBAL, ctx);
+		context_free(ctx);
+		current_processing_ctx = NULL;
+	}
 
 	return ret;
 }
@@ -1304,6 +1320,7 @@ int do_action(struct action* a, struct sip_msg* msg)
 			{
 				val.rs = aux;
 				val.flags = PV_VAL_STR;
+				fix_val_str_flags(val);
 
 				spec = (pv_spec_t*)a->elem[2].u.data;
 				if (pv_set_value(msg, spec, 0, &val) < 0) {
@@ -1524,7 +1541,7 @@ int do_action(struct action* a, struct sip_msg* msg)
 				break;
 			}
 
-			cdb_raw_entry **cdb_reply;
+			cdb_raw_entry **cdb_reply = NULL;
 			int val_number=0,i,j;
 			int key_number=0;
 			pvname_list_t *cdb_res,*it;
@@ -1854,17 +1871,34 @@ next_avp:
 			/* first param - an ACTIONS_ST containing an ACMD_ST
 			 * second param - a NUMBER_ST pointing to resume route */
 			aitem = (struct action *)(a->elem[0].u.data);
-			if (async_start_f==NULL || a->elem[0].type!=ACTIONS_ST ||
+			if (async_script_start_f==NULL || a->elem[0].type!=ACTIONS_ST ||
 			a->elem[1].type!=NUMBER_ST || aitem->type!=AMODULE_T) {
 				LM_ALERT("BUG in async expression\n");
 			} else {
-				script_trace("async", ((acmd_export_t*)(aitem->elem[0].u.data))->name,
+				script_trace("async",
+					((acmd_export_t*)(aitem->elem[0].u.data))->name,
 					msg, a->file, a->line) ;
-				ret = async_start_f( msg, aitem, a->elem[1].u.number);
+				ret = async_script_start_f( msg, aitem, a->elem[1].u.number);
 				if (ret>=0)
 					action_flags |= ACT_FL_TBCONT;
 			}
 			ret = 0;
+			break;
+		case LAUNCH_T:
+			/* first param - an ACTIONS_ST containing an ACMD_ST
+			 * second param - an optional NUMBER_ST pointing to an end route */
+			aitem = (struct action *)(a->elem[0].u.data);
+			if (async_script_start_f==NULL || a->elem[0].type!=ACTIONS_ST ||
+			a->elem[1].type!=NUMBER_ST || aitem->type!=AMODULE_T) {
+				LM_ALERT("BUG in launch expression\n");
+			} else {
+				script_trace("launch",
+					((acmd_export_t*)(aitem->elem[0].u.data))->name,
+					msg, a->file, a->line) ;
+				/* NOTE that the routeID (a->elem[1].u.number) is set to 
+				 * -1 if no reporting route is set */
+				ret = async_script_launch( msg, aitem, a->elem[1].u.number);
+			}
 			break;
 		case FORCE_RPORT_T:
 			script_trace("core", "force_rport", msg, a->file, a->line) ;

@@ -65,6 +65,87 @@ listen = hep_udp:127.0.0.1:6061 		# change the listening IP
 
 	<section>
 	<title>Exported Parameters</title>
+
+
+	<section>
+		<title><varname>hep_id</varname> (str)</title>
+		<para>
+			Specify a destination for HEP packets and the version of
+			HEP protocol used. All parameters inside
+			<emphasis role="bold">hep_id</emphasis> must be separated by
+			<emphasis role="bold">;</emphasis>. The parameters
+			are given in key-value format, the possible keys being
+			<emphasis role="bold">uri</emphasis>, <emphasis role="bold">transport</emphasis>
+			and <emphasis role="bold">version</emphasis>, except destiantion's
+			URI which doesn't have a key and is in <emphasis role="bold">host:port
+			</emphasis>. <emphasis role="bold">transport</emphasis> key can be
+			<emphasis role="bold">TCP</emphasis> or <emphasis role="bold">UDP</emphasis>.
+			<emphasis role="bold">TCP</emphasis> works only for HEP version 3.
+			<emphasis role="bold">Version</emphasis> is the hep protocol version
+			and can be <emphasis role="bold">1</emphasis>, <emphasis role="bold">2</emphasis>
+			or <emphasis role="bold">3</emphasis>.
+		</para>
+		<para>
+			HEPv1 and HEPv2 can use only UDP. HEPv3 can use both TCP and UDP having the
+			default set to TCP. If no hep version defined, the default is version 3 with TCP.
+		</para>
+		<para>
+			NO default value. If <emphasis role="bold">hep_id</emphasis> the module
+		can't be used for HEP tracing.
+		</para>
+		<example>
+		<title> Set <varname>hep_id</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+/* define a destination to localhost on port 8001 using hepV3 on tcp */
+modparam("proto_hep", "hep_id",
+"[hep_dst] 127.0.0.1:8001; transport=tcp; version=3")
+/* define a destination to 1.2.3.4 on port 5000 using hepV2; no transport(default UDP) */
+modparam("proto_hep", "hep_id", "[hep_dst] 1.2.3.4:5000; version=2")
+/* define only the destination uri; version will be 3(default) and transport TCP(default) */
+modparam("proto_hep", "hep_id", "[hep_dst] 1.2.3.4:5000")
+</programlisting>
+	</example>
+	</section>
+
+	<section>
+		<title><varname>homer5_on</varname> (int) </title>
+		<para>
+			Specify how the data should be encapsulated, as plain text
+			(HOMER5 - anything different than 0) or JSON based (HOMER 6 - 0).
+			As concerns capturing, this affects report_capture function behaviour from
+			<ulink url="http://www.opensips.org/html/docs/modules/2.3.x/sipcapture">sipcapture</ulink>
+			module.
+		</para>
+		<para>
+			Default value 1, HOMER5 format.
+		</para>
+		<example>
+		<title> Set <varname>homer5_on</varname> parameter</title>
+		<programlisting format="linespecific">
+modparam("proto_hep", "homer5_on", 0)
+</programlisting>
+	</example>
+	</section>
+
+	<section>
+		<title><varname>homer5_delim</varname> (str) </title>
+		<para>
+			In case <emphasis role="bold">homer5_on</emphasis> is set
+		(different than 0), with this parameter you will be able to set
+		the delmiter between different payload parts.
+		</para>
+		<para>
+			Default value ":".
+		</para>
+		<example>
+		<title> Set <varname>homer5_on</varname> parameter</title>
+		<programlisting format="linespecific">
+modparam("proto_hep", "homer5_delim", "##")
+</programlisting>
+	</example>
+	</section>
+
 	<section>
 		<title><varname>hep_port</varname> (integer)</title>
 		<para>
@@ -147,7 +228,7 @@ modparam("proto_hep", "hep_max_msg_chunks", 8)
 		<title>Set <varname>hep_async</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("proto_bin", "hep_async", 0)
+modparam("proto_hep", "hep_async", 0)
 ...
 </programlisting>
 		</example>
@@ -242,6 +323,67 @@ modparam("proto_hep", "tcp_async_local_write_timeout", 100)
 </programlisting>
 		</example>
 	</section>
+
 	</section>
+
+	<section>
+	<title>Exported Functions</title>
+	<section>
+		<title>
+		<function moreinfo="none">correlate(hep_id, type1, correlation1, type2, correlation2)</function>
+		</title>
+		<para>
+			Send a hep message with an extra correlation id containing the two correlation given
+			as arguments. The two types must differ. All parameters are mandatory. This will help
+			on the capturing side to correlate two calls for example, being given their callid
+			as correlation ids.
+		</para>
+		<para>
+		This function can be used from REQUEST_ROUTE, FAILURE_ROUTE, ONREPLY_ROUTE, BRANCH_ROUTE, LOCAL_ROUTE.
+		</para>
+		<para>Meaning of the parameters is as follows:</para>
+		<itemizedlist>
+		<listitem>
+			<para><emphasis>hep_id (string, pvar)</emphasis>
+				the name of the <emphasis>hep_id</emphasis> defined in modparam section,
+				specifying where to do the tracing.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>type1 (string)</emphasis>
+				the key name identify the first correlation id.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>correlation1 (string, pvar)</emphasis>
+				the first extra correlation id that will be put in the extra correlation chunk.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>type2 (string)</emphasis>
+				the key name identify the second correlation id.
+			</para>
+		</listitem>
+		<listitem>
+			<para><emphasis>correlation2 (string, pvar)</emphasis>
+				the second extra correlation id that will be put in the extra correlation chunk.
+			</para>
+		</listitem>
+
+		</itemizedlist>
+		<example>
+		<title><function>correlate</function> usage</title>
+		<programlisting format="linespecific">
+...
+/* see declaration of hep_dst in trace_id section */
+/* we suppose we have two correlations in two varibles: cor1 and cor2 */
+	correlate("hep_dst", "correlation-no-1","$var(cor1)","correlation-no-2", "$var(cor2)");
+...
+</programlisting>
+		</example>
+	</section>
+	</section>
+
+
 
 </chapter>

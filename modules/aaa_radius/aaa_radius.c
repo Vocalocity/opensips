@@ -31,10 +31,16 @@
  * to get information from the RADIUS reply.
  */
 
-#ifndef USE_FREERADIUS
-	#include <radiusclient-ng.h>
-#else
+#ifdef FREERADIUS
 	#include <freeradius-client.h>
+#else
+	#ifdef RADCLI
+		#include <radcli/radcli.h>
+	#else
+		#ifdef RADIUSCLIENT
+			#include <radiusclient-ng.h>
+		#endif
+	#endif
 #endif
 
 #include "../../sr_module.h"
@@ -74,15 +80,14 @@ int aaa_radius_bind_api(aaa_prot *rad_prot);
 
 int send_auth_func(struct sip_msg* msg, str* s1, str* s2);
 #ifdef RADIUS_ASYNC_SUPPORT
-int send_auth_func_async(struct sip_msg* msg, async_resume_module **resume_f,
-		void **resume_param, str* s1, str* s2);
+int send_auth_func_async(struct sip_msg* msg, async_ctx *actx,
+		str* s1, str* s2);
 #endif
 int send_auth_fixup(void** param, int param_no);
 
 int send_acct_func(struct sip_msg* msg, str* s);
 #ifdef RADIUS_ASYNC_SUPPORT
-int send_acct_func_async(struct sip_msg* msg, async_resume_module **resume_f,
-		void **resume_param, str *s);
+int send_acct_func_async(struct sip_msg* msg, async_ctx *ctx, str *s);
 #endif
 int send_acct_fixup(void** param, int param_no);
 
@@ -486,8 +491,8 @@ error:
 
 }
 
-int send_auth_func_async(struct sip_msg* msg, async_resume_module **resume_f,
-		void **resume_param, str* s1, str* s2) {
+int send_auth_func_async(struct sip_msg* msg, async_ctx *actx,
+															str* s1, str* s2) {
 	int i, res;
 	int index1 = -1, index2 = -1;
 	char mess[1024];
@@ -543,8 +548,8 @@ int send_auth_func_async(struct sip_msg* msg, async_resume_module **resume_f,
 		rctx->send	 = send;
 		rctx->ctx	 = ctx;
 
-		*resume_param = rctx;
-		*resume_f	  = resume_send_auth;
+		actx->resume_param = rctx;
+		actx->resume_f = resume_send_auth;
 		async_status  = ctx->sockfd;
 
 		return 1;
@@ -660,8 +665,7 @@ exit:
 	return retval;
 }
 
-int send_acct_func_async(struct sip_msg* msg, async_resume_module **resume_f,
-		void **resume_param, str *s)
+int send_acct_func_async(struct sip_msg* msg, async_ctx *actx, str *s)
 {
 	int i, index = -1, res;
 	VALUE_PAIR *send = NULL;
@@ -706,8 +710,8 @@ int send_acct_func_async(struct sip_msg* msg, async_resume_module **resume_f,
 		rctx->send	 = send;
 		rctx->ctx	 = ctx;
 
-		*resume_param = rctx;
-		*resume_f	  = resume_send_acct;
+		actx->resume_param = rctx;
+		actx->resume_f = resume_send_acct;
 		async_status  = ctx->sockfd;
 
 		return 1;

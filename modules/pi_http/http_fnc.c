@@ -351,17 +351,10 @@ static const str PI_HTTP_Response_Menu_Cmd_Table_2 = str_init("</tbody></table>\
 
 static const str PI_HTTP_NBSP = str_init("&nbsp;");
 static const str PI_HTTP_SLASH = str_init("/");
-static const str PI_HTTP_SEMICOLON = str_init(" : ");
 static const str PI_HTTP_SQUOT_GT = str_init("'>");
 
-static const str PI_HTTP_NODE_INDENT = str_init("\t");
-static const str PI_HTTP_NODE_SEPARATOR = str_init(":: ");
 static const str PI_HTTP_ATTR_SEPARATOR = str_init(" ");
 static const str PI_HTTP_ATTR_VAL_SEPARATOR = str_init("=");
-
-static const str PI_HTTP_BREAK = str_init("<br/>");
-static const str PI_HTTP_CODE_1 = str_init("<pre>");
-static const str PI_HTTP_CODE_2 = str_init("</pre>");
 
 static const str PI_HTTP_Post_Form_1a = str_init("\n"\
 "		<form name=\"input\" method=\"");
@@ -1921,7 +1914,8 @@ int ph_init_cmds(ph_framework_t **framework_data, const char* filename)
 		if(ph_getMods(_framework_data, framework_node)!=0)
 			goto xml_error;
 
-		if(doc)xmlFree(doc);doc=NULL;
+		if(doc)xmlFree(doc);
+		doc=NULL;
 		*framework_data = _framework_data;
 	}else{ /* This is a reload */
 		_ph_db_tables = _framework_data->ph_db_tables;
@@ -1941,7 +1935,8 @@ int ph_init_cmds(ph_framework_t **framework_data, const char* filename)
 		if(ph_getMods(_framework_data, framework_node)!=0)
 			goto xml_reload_error;
 
-		if(doc)xmlFree(doc);doc=NULL;
+		if(doc)xmlFree(doc);
+		doc=NULL;
 		*framework_data = _framework_data;
 
 	}
@@ -1949,7 +1944,8 @@ int ph_init_cmds(ph_framework_t **framework_data, const char* filename)
 xml_error:
 	/* FIXME: free thw whole structure */
 	if(_framework_data){shm_free(_framework_data);}
-	if(doc)xmlFree(doc);doc=NULL;
+	if(doc)xmlFree(doc);
+	doc=NULL;
 	return -1;
 xml_reload_error:
 	ph_freeDbTables(&_framework_data->ph_db_tables,
@@ -1960,7 +1956,8 @@ xml_reload_error:
 	_framework_data->ph_db_tables_size = _ph_db_tables_size;
 	_framework_data->ph_modules = _ph_modules;
 	_framework_data->ph_modules_size = _ph_modules_size;
-	if(doc)xmlFree(doc);doc=NULL;
+	if(doc)xmlFree(doc);
+	doc=NULL;
 	return -1;
 }
 
@@ -2850,7 +2847,7 @@ int ph_run_pi_cmd(int mod, int cmd,
 		return ret;
 	} else if(l_arg.len==2 && strncmp(l_arg.s, "on", 2)==0) {
 		/* allocate c_vals array */
-		if(command->c_keys_size && command->c_keys_size){
+		if(command->c_keys_size){
 			c_vals = (db_val_t*)pkg_malloc(command->c_keys_size*sizeof(db_val_t));
 			if(c_vals==NULL){
 				LM_ERR("oom\n");
@@ -2888,7 +2885,7 @@ int ph_run_pi_cmd(int mod, int cmd,
 			}
 		}
 	}
-	if(command->q_keys_size && command->q_keys_size && command->type!=DB_CAP_QUERY){
+	if(command->q_keys_size && command->type!=DB_CAP_QUERY){
 		q_vals = (db_val_t*)pkg_malloc(command->q_keys_size*sizeof(db_val_t));
 		if(q_vals==NULL){
 			LM_ERR("oom\n");

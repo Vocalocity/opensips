@@ -531,6 +531,8 @@ static inline int str2sint(str* _s, int* _r)
 	if(_s->s[i]=='-') {
 		s=-1;
 		i++;
+	} else if (_s->s[i]=='+') {
+		i++;
 	}
 	for(; i < _s->len; i++) {
 		if ((_s->s[i] >= '0') && (_s->s[i] <= '9')) {
@@ -578,6 +580,64 @@ static inline int shm_str_dup(str* dst, const str* src)
 }
 
 /*
+ * Make a copy of an str structure using shm_malloc
+ *	  + an additional '\0' byte, so you can make use of dst->s
+ */
+static inline int shm_nt_str_dup(str* dst, const str* src)
+{
+	if (!src || !src->s)
+		return -1;
+
+	memset(dst, 0, sizeof *dst);
+
+	dst->s = shm_malloc(src->len + 1);
+	if (!dst->s) {
+		LM_ERR("no shared memory left\n");
+		return -1;
+	}
+
+	memcpy(dst->s, src->s, src->len);
+	dst->len = src->len;
+	dst->s[dst->len] = '\0';
+	return 0;
+}
+
+static inline char *shm_strdup(const char *str)
+{
+	char *rval;
+	int len;
+
+	if (!str)
+		return NULL;
+
+	len = strlen(str) + 1;
+	rval = shm_malloc(len);
+	if (!rval)
+		return NULL;
+	memcpy(rval, str, len);
+	return rval;
+}
+
+/* Extend the given buffer only if needed */
+static inline int shm_str_resize(str *in, int size)
+{
+	char *p;
+
+	if (in->len < size) {
+		p = shm_realloc(in->s, size);
+		if (!p) {
+			LM_ERR("oom\n");
+			return -1;
+		}
+
+		in->s = p;
+		in->len = size;
+	}
+
+	return 0;
+}
+
+/*
  * Make a copy of a str structure using pkg_malloc
  */
 static inline int pkg_str_dup(str* dst, const str* src)
@@ -591,6 +651,41 @@ static inline int pkg_str_dup(str* dst, const str* src)
 
 	memcpy(dst->s, src->s, src->len);
 	dst->len = src->len;
+	return 0;
+}
+
+static inline char *pkg_strdup(const char *str)
+{
+	char *rval;
+	int len;
+
+	if (!str)
+		return NULL;
+
+	len = strlen(str) + 1;
+	rval = pkg_malloc(len);
+	if (!rval)
+		return NULL;
+	memcpy(rval, str, len);
+	return rval;
+}
+
+/* Extend the given buffer only if needed */
+static inline int pkg_str_resize(str *in, int size)
+{
+	char *p;
+
+	if (in->len < size) {
+		p = pkg_realloc(in->s, size);
+		if (!p) {
+			LM_ERR("oom\n");
+			return -1;
+		}
+
+		in->s = p;
+		in->len = size;
+	}
+
 	return 0;
 }
 
@@ -920,6 +1015,40 @@ static inline int str_check_token( str * in)
 	return 1;
 }
 
+
+/*
+ * l_memmem() returns the location of the first occurrence of data
+ * pattern b2 of size len2 in memory block b1 of size len1 or
+ * NULL if none is found. Obtained from NetBSD.
+ */
+static inline void * l_memmem(const void *b1, const void *b2,
+													size_t len1, size_t len2)
+{
+	/* Initialize search pointer */
+	char *sp = (char *) b1;
+
+	/* Initialize pattern pointer */
+	char *pp = (char *) b2;
+
+	/* Initialize end of search address space pointer */
+	char *eos = sp + len1 - len2;
+
+	/* Sanity check */
+	if(!(b1 && b2 && len1 && len2))
+		return NULL;
+
+	while (sp <= eos) {
+		if (*sp == *pp)
+			if (memcmp(sp, pp, len2) == 0)
+				return sp;
+
+		sp++;
+	}
+
+	return NULL;
+}
+
+
 int user2uid(int* uid, int* gid, char* user);
 
 int group2gid(int* gid, char* group);
@@ -936,15 +1065,26 @@ int parse_reply_codes( str *options_reply_codes_str,
 void base64encode(unsigned char *out, unsigned char *in, int inlen);
 int base64decode(unsigned char *out,unsigned char *in,int len);
 
+/*
+ * "word64" is a combination between:
+ *   - RFC 3261-compatible "word" token characters
+ *   - modulo-64 encoding of base64
+ */
+void word64encode(unsigned char *out, unsigned char *in, int inlen);
+int word64decode(unsigned char *out, unsigned char *in, int len);
+
 static inline int calc_base64_encode_len(int len)
 {
 	return (len/3 + (len%3?1:0))*4;
 }
+#define calc_word64_encode_len calc_base64_encode_len
 
 static inline int calc_max_base64_decode_len(int len)
 {
 	return len*3/4;
 }
+
+#define calc_max_word64_decode_len calc_max_base64_decode_len
 
 
 #endif
