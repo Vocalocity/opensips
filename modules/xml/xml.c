@@ -525,19 +525,15 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 			}
 		}
 
-		if (res_buf.len < xml_buf_len) {
-			res_buf.s = pkg_realloc(res_buf.s, xml_buf_len);
-			if (!res_buf.s) {
-				LM_ERR("No more pkg mem\n");
-				if (xml_buf)
-					xmlBufferFree(xml_buf);
-				else
-					xmlFree(xml_buf_s);
-			}
+		if (pkg_str_resize(&res_buf, xml_buf_len) != 0) {
+			LM_ERR("No more pkg mem\n");
+			if (xml_buf)
+				xmlBufferFree(xml_buf);
+			else
+				xmlFree(xml_buf_s);
 		}
 
 		memcpy(res_buf.s, xml_buf_s, xml_buf_len);
-		res_buf.len = xml_buf_len;
 
 		if (xml_buf)
 			xmlBufferFree(xml_buf);
@@ -545,7 +541,7 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 			xmlFree(xml_buf_s);
 
 		res->rs.s = res_buf.s;
-		res->rs.len = res_buf.len;
+		res->rs.len = xml_buf_len;
 
 		break;
 	case ACCESS_EL_VAL:
@@ -561,12 +557,9 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 		}
 
 		xml_buf_len = xmlBufferLength(xml_buf);
-		if (res_buf.len < xml_buf_len) {
-			res_buf.s = pkg_realloc(res_buf.s, xml_buf_len);
-			if (!res_buf.s) {
-				LM_ERR("No more pkg mem\n");
-				goto err_free_xml_buf;
-			}
+		if (pkg_str_resize(&res_buf, xml_buf_len) != 0) {
+			LM_ERR("No more pkg mem\n");
+			goto err_free_xml_buf;
 		}
 
 		xml_buf_s = (char *)xmlBufferContent(xml_buf);
@@ -575,12 +568,11 @@ int pv_get_xml(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* res)
 			goto err_free_xml_buf;
 		}
 		memcpy(res_buf.s, xml_buf_s, xml_buf_len);
-		res_buf.len = xml_buf_len;
 
 		xmlBufferFree(xml_buf);
 
 		res->rs.s = res_buf.s;
-		res->rs.len = res_buf.len;
+		res->rs.len = xml_buf_len;
 
 		break;
 	case ACCESS_EL_ATTR:
@@ -644,7 +636,7 @@ static int insert_new_node(xmlDoc *doc, xmlNode *parent, xmlDoc *new_doc, xml_pa
 	c = NULL;
 	for (c = xml_str.s + xml_str.len - 1; c > xml_str.s &&
 		(*c == ' ' || *c == '\t' || *c == '\n'); c--) ;
-	trail_ws_len = c ? xml_str.len - (c+1 - xml_str.s) : 0;
+	trail_ws_len = xml_str.len - (c+1 - xml_str.s);
 
 	if (trail_ws_len) {
 		memcpy(trail_ws, c+1, trail_ws_len);

@@ -112,7 +112,7 @@ int xj_jcon_connect(xj_jcon jbc)
     if(he == NULL)
     {
     	LM_DBG("failed to get info about Jabber server address\n");
-        return -1;
+		goto error;
     }
 
 	memset(&address, 0, sizeof(address));
@@ -124,13 +124,15 @@ int xj_jcon_connect(xj_jcon jbc)
     // try to connect with Jabber server
     if (connect(sock, (struct sockaddr *)&address, sizeof(address))<0)
     {
-		close(sock);
     	LM_DBG("failed to connect with Jabber server\n");
-        return -1;
+        goto error;
     }
     jbc->sock = sock;
 
     return 0;
+error:
+	close(sock);
+	return -1;
 }
 
 /**
@@ -250,9 +252,11 @@ int xj_jcon_user_auth(xj_jcon jbc, char *username, char *passwd,
 		goto error;
 
 	x = xode_from_strx(msg_buff, n, &err, &i);
+	/*
 	p0 = msg_buff;
 	if(err)
 		p0 += i;
+	*/
 
 	if(strncasecmp(xode_get_name(x), "iq", 2))
 		goto errorx;
@@ -322,9 +326,11 @@ int xj_jcon_user_auth(xj_jcon jbc, char *username, char *passwd,
 		goto error;
 
 	x = xode_from_strx(msg_buff, n, &err, &i);
+	/*
 	p0 = msg_buff;
 	if(err)
 		p0 += i;
+	*/
 
 	if(strncasecmp(xode_get_name(x), "iq", 2) ||
 			strncasecmp(xode_get_attrib(x, "type"), "result", 6))
