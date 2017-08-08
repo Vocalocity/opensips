@@ -78,15 +78,15 @@
 	do{\
 		if ((_val)->type!=_type) { \
 			LM_ERR("column %.*s has a bad type\n", _col.len, _col.s); \
-			goto error;\
+			continue;\
 		} \
 		if (_not_null && (_val)->nul) { \
 			LM_ERR("column %.*s is null\n", _col.len, _col.s); \
-			goto error;\
+			continue;\
 		} \
 		if (_is_empty_str && VAL_STRING(_val)==0) { \
 			LM_ERR("column %.*s (str) is empty\n", _col.len, _col.s); \
-			goto error;\
+			continue;\
 		} \
 		if ((_val)->type == DB_INT && (_val)->nul) { \
 			(_val)->val.int_val = -1;\
@@ -517,6 +517,7 @@ int load_info(struct tls_domain **serv_dom, struct tls_domain **cli_dom,
 	do {
 		for (i = 0; i < RES_ROW_N(res); i++) {
 			row = RES_ROWS(res) + i;
+			n++;
 
 			check_val(id_col, ROW_VALUES(row), DB_INT, 1, 0);
 			int_vals[INT_VALS_ID_COL] = VAL_INT(ROW_VALUES(row));
@@ -581,8 +582,6 @@ int load_info(struct tls_domain **serv_dom, struct tls_domain **cli_dom,
 					LM_ERR("failed to add TLS domain id: %d, skipping... \n",
 						int_vals[INT_VALS_ID_COL]);
 			}
-
-			n++;
 		}
 
 		if (DB_CAPABILITY(dr_dbf, DB_CAP_FETCH)) {
@@ -1158,109 +1157,146 @@ static int load_private_key_db(SSL_CTX * ctx, str *blob)
 }
 
 
+static int init_tls_dom(struct tls_domain *d)
+{
+	int from_file = 0;
+
+	LM_INFO("Processing TLS domain '%.*s'\n",
+			d->name.len, ZSW(d->name.s));
+
+	/*
+	 * set method
+	 */
+	if (d->method == TLS_METHOD_UNSPEC) {
+		LM_DBG("no method for tls domain '%.*s', using default\n",
+				d->name.len, ZSW(d->name.s));
+		d->method = tls_default_method;
+	}
+
+	/*
+	 * create context
+	 */
+	d->ctx = SSL_CTX_new(ssl_methods[d->method - 1]);
+	if (d->ctx == NULL) {
+		LM_ERR("cannot create ssl context for tls domain '%.*s'\n",
+			d->name.len, ZSW(d->name.s));
+		return -1;
+	}
+
+	if (init_ssl_ctx_behavior(d) < 0)
+		return -1;
+
+	/*
+	 * load certificate
+	 */
+	if (!d->cert.s) {
+		from_file = 1;
+		LM_NOTICE("no certificate for tls domain '%.*s' defined, using default '%s'\n",
+				d->name.len, ZSW(d->name.s), tls_cert_file);
+		d->cert.s = tls_cert_file;
+		d->cert.len = len(tls_cert_file);
+	}
+
+	if (!(d->type & TLS_DOMAIN_DB) || from_file) {
+		if (load_certificate(d->ctx, d->cert.s) < 0)
+			return -1;
+	} else
+		if (load_certificate_db(d->ctx, &d->cert) < 0)
+			return -1;
+
+	from_file = 0;
+
+	/**
+	 * load crl from directory
+	 */
+	if (!d->crl_directory) {
+		LM_NOTICE("no crl for tls, using none\n");
+	} else {
+		if(load_crl(d->ctx, d->crl_directory, d->crl_check_all) < 0)
+			return -1;
+	}
+
+	/*
+	 * load ca
+	 */
+	if (!d->ca.s) {
+		from_file = 1;
+		LM_NOTICE("no CA list for tls domain '%.*s' defined, using default '%s'\n",
+				d->name.len, ZSW(d->name.s), tls_ca_file);
+		d->ca.s = tls_ca_file;
+		d->ca.len = len(tls_ca_file);
+	}
+
+	if (!(d->type & TLS_DOMAIN_DB) || from_file) {
+		if (d->ca.s && load_ca(d->ctx, d->ca.s) < 0)
+			return -1;
+	} else {
+		if (load_ca_db(d->ctx, &d->ca) < 0)
+			return -1;
+	}
+
+	/*
+	 * load ca from directory
+	 */
+	if (!d->ca_directory) {
+		LM_NOTICE("no CA dir for tls '%.*s' defined, using default '%s'\n",
+				d->name.len, ZSW(d->name.s), tls_ca_dir);
+		d->ca_directory = tls_ca_dir;
+	}
+
+	if (d->ca_directory && load_ca_dir(d->ctx, d->ca_directory) < 0)
+		return -1;
+
+	return 0;
+}
+
 /*
  * initialize tls virtual domains
  */
-static int init_tls_domains(struct tls_domain *d)
+static int init_tls_domains(struct tls_domain **dom)
 {
-	struct tls_domain *dom;
+	struct tls_domain *d, *tmp, *prev = NULL;
 	int from_file = 0;
+	int rc;
+	int db = 0;
 
-	dom = d;
+	d = *dom;
 	while (d) {
-		LM_INFO("Processing TLS domain '%.*s'\n",
-				d->name.len, ZSW(d->name.s));
-
-		/*
-		 * set method
-		 */
-		if (d->method == TLS_METHOD_UNSPEC) {
-			LM_DBG("no method for tls domain '%.*s', using default\n",
+		if (init_tls_dom(d) < 0) {
+			db = d->type & TLS_DOMAIN_DB;
+			if (!db)
+				LM_ERR("Failed to init TLS domain '%.*s'\n", d->name.len, ZSW(d->name.s));
+			else
+				LM_WARN("Failed to init TLS domain '%.*s', skipping...\n",
 					d->name.len, ZSW(d->name.s));
-			d->method = tls_default_method;
-		}
 
-		/*
-		 * create context
-		 */
-		d->ctx = SSL_CTX_new(ssl_methods[d->method - 1]);
-		if (d->ctx == NULL) {
-			LM_ERR("cannot create ssl context for tls domain '%.*s'\n",
-				d->name.len, ZSW(d->name.s));
-			return -1;
-		}
+			if (d == *dom)
+				*dom = d->next;
 
-		if (init_ssl_ctx_behavior(d) < 0)
-			return -1;
+			if (prev)
+				prev->next = d->next;
 
-		/*
-		 * load certificate
-		 */
-		if (!d->cert.s) {
-			from_file = 1;
-			LM_NOTICE("no certificate for tls domain '%.*s' defined, using default '%s'\n",
-					d->name.len, ZSW(d->name.s), tls_cert_file);
-			d->cert.s = tls_cert_file;
-			d->cert.len = len(tls_cert_file);
-		}
+			tmp = d;
+			d = d->next;
+			if (tmp->ctx)
+				SSL_CTX_free(tmp->ctx);
+			lock_destroy(tmp->lock);
+			lock_dealloc(tmp->lock);
+			shm_free(tmp);
 
-		if (!(d->type & TLS_DOMAIN_DB) || from_file) {
-			if (load_certificate(d->ctx, d->cert.s) < 0)
-				return -1;
-		} else
-			if (load_certificate_db(d->ctx, &d->cert) < 0)
-				return -1;
-
-		from_file = 0;
-
-		/**
-		 * load crl from directory
-		 */
-		if (!d->crl_directory) {
-			LM_NOTICE("no crl for tls, using none\n");
-		} else {
-			if(load_crl(d->ctx, d->crl_directory, d->crl_check_all) < 0)
-				return -1;
-		}
-
-		/*
-		 * load ca
-		 */
-		if (!d->ca.s) {
-			from_file = 1;
-			LM_NOTICE("no CA list for tls domain '%.*s' defined, using default '%s'\n",
-					d->name.len, ZSW(d->name.s), tls_ca_file);
-			d->ca.s = tls_ca_file;
-			d->ca.len = len(tls_ca_file);
-		}
-
-		if (!(d->type & TLS_DOMAIN_DB) || from_file) {
-			if (d->ca.s && load_ca(d->ctx, d->ca.s) < 0)
+			if (!db)
 				return -1;
 		} else {
-			if (load_ca_db(d->ctx, &d->ca) < 0)
-				return -1;
+			prev = d;
+			d = d->next;
 		}
-		from_file = 0;
-		/*
-		 * load ca from directory
-		 */
-		if (!d->ca_directory) {
-			LM_NOTICE("no CA dir for tls '%.*s' defined, using default '%s'\n",
-					d->name.len, ZSW(d->name.s), tls_ca_dir);
-			d->ca_directory = tls_ca_dir;
-		}
-
-		if (d->ca_directory && load_ca_dir(d->ctx, d->ca_directory) < 0)
-			return -1;
-
-		d = d->next;
 	}
 
 	/*
 	 * load all private keys as the last step (may prompt for password)
 	 */
-	d = dom;
+	d = *dom;
+	prev = NULL;
 	while (d) {
 		if (!d->pkey.s) {
 			LM_NOTICE("no private key for tls domain '%.*s' defined, using default '%s'\n",
@@ -1270,16 +1306,39 @@ static int init_tls_domains(struct tls_domain *d)
 			from_file = 1;
 		}
 
-		if (!(d->type & TLS_DOMAIN_DB) || from_file) {
-			if (load_private_key(d->ctx, d->pkey.s) < 0)
+		if (!(d->type & TLS_DOMAIN_DB) || from_file)
+			rc = load_private_key(d->ctx, d->pkey.s);
+		else
+			rc = load_private_key_db(d->ctx, &d->pkey);
+
+		if (rc < 0) {
+			db = d->type & TLS_DOMAIN_DB;
+			if (!db)
+				LM_ERR("Failed to init TLS domain '%.*s'\n", d->name.len, ZSW(d->name.s));
+			else
+				LM_WARN("Failed to init TLS domain '%.*s', skipping...\n",
+					d->name.len, ZSW(d->name.s));
+
+			if (d == *dom)
+				*dom = d->next;
+
+			if (prev)
+				prev->next = d->next;
+
+			tmp = d;
+			d = d->next;
+			if (tmp->ctx)
+				SSL_CTX_free(tmp->ctx);
+			lock_destroy(tmp->lock);
+			lock_dealloc(tmp->lock);
+			shm_free(tmp);
+
+			if (!db)
 				return -1;
 		} else {
-			if (load_private_key_db(d->ctx, &d->pkey) < 0)
-				return -1;
+			prev = d;
+			d = d->next;
 		}
-
-		from_file = 0;
-		d = d->next;
 	}
 
 	return 0;
@@ -1416,50 +1475,53 @@ static int reload_data(void)
 	/*
 	 * initialize new domains
 	 */
-	if (init_tls_domains(tls_server_domains_tmp) < 0)
-		return -1;
-	if (init_tls_domains(tls_client_domains_tmp) < 0)
-		return -1;
+	init_tls_domains(&tls_server_domains_tmp);
+	init_tls_domains(&tls_client_domains_tmp);
 
-	if (init_tls_domains(def_srv_dom_tmp) < 0)
-		return -1;
-	if (init_tls_domains(def_cli_dom_tmp) < 0)
-		return -1;
+	init_tls_domains(&def_srv_dom_tmp);
+	init_tls_domains(&def_cli_dom_tmp);
 
 	lock_start_write(dom_lock);
 
-	if ((*tls_default_server_domain)->type & TLS_DOMAIN_DB) {
-		/* if previous default domain was DB defined, we must release it */
-		tls_release_domain_aux(*tls_default_server_domain);
+	if ((*tls_default_server_domain)->type & TLS_DOMAIN_DB)
 		db_defined = 1;
-	}
 
-	if (def_srv_dom_tmp)	/* new default domain found in DB */
+	if (def_srv_dom_tmp) {	/* new, valid default domain from DB */
+		/* if previous default domain was DB defined, we must release it */
+		if (db_defined)
+			tls_release_domain_aux(*tls_default_server_domain);
+
 		*tls_default_server_domain = def_srv_dom_tmp;
-	else if (db_defined) {
-		*tls_default_server_domain = tls_def_srv_dom_orig;
+	} else if (db_defined) {
+		if (tls_def_srv_dom_orig && tls_def_srv_dom_orig->ctx == NULL)
+			init_tls_domains(&tls_def_srv_dom_orig);
 
-		if ((*tls_default_server_domain)->ctx == NULL &&
-			init_tls_domains(*tls_default_server_domain) < 0)
-			return -1;
+		if (tls_def_srv_dom_orig) {
+			tls_release_domain_aux(*tls_default_server_domain);
+			*tls_default_server_domain = tls_def_srv_dom_orig;
+		} /* else - keep the old DB default domain */
 	} /* else - keep the old non-DB default domain */
 
 	db_defined = 0;
 
 	/* same for default client domain */
-	if ((*tls_default_client_domain)->type & TLS_DOMAIN_DB) {
-		tls_release_domain_aux(*tls_default_client_domain);
+	if ((*tls_default_client_domain)->type & TLS_DOMAIN_DB)
 		db_defined = 1;
-	}
 
-	if (def_cli_dom_tmp)
+	if (def_cli_dom_tmp) {
+		if (db_defined)
+			tls_release_domain_aux(*tls_default_client_domain);
+
 		*tls_default_client_domain = def_cli_dom_tmp;
+	}
 	else if (db_defined) {
-		*tls_default_client_domain = tls_def_cli_dom_orig;
+		if (tls_def_cli_dom_orig && tls_def_cli_dom_orig->ctx == NULL)
+			init_tls_domains(&tls_def_cli_dom_orig);
 
-		if ((*tls_default_client_domain)->ctx == NULL &&
-			init_tls_domains(*tls_default_client_domain) < 0)
-			return -1;
+		if (tls_def_cli_dom_orig) {
+			tls_release_domain_aux(*tls_default_client_domain);
+			*tls_default_client_domain = tls_def_cli_dom_orig;
+		}
 	}
 
 	tls_release_db_domains(*tls_server_domains);
@@ -1507,7 +1569,7 @@ static struct mi_root* tls_reload(struct mi_root* root, void *param)
 		return init_mi_tree(500, "DB url not set", 14);
 
 	if (reload_data() < 0) {
-		LM_CRIT("failed to load tls data\n");
+		LM_ERR("failed to load tls data\n");
 		return init_mi_tree(500, "Failed to reload", 16);
 	}
 
@@ -1517,7 +1579,9 @@ static struct mi_root* tls_reload(struct mi_root* root, void *param)
 
 static int mod_init(void) {
 	str s;
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
 	int n;
+#endif
 	struct tls_domain *tls_client_domains_tmp = NULL;
 	struct tls_domain *tls_server_domains_tmp = NULL;
 	struct tls_domain *dom;
@@ -1710,33 +1774,42 @@ static int mod_init(void) {
 	if (def_cli_tmp)
 		*tls_default_client_domain = def_cli_tmp;
 
-	/*
-	 * initialize tls default domains
-	 */
-	if (init_tls_domains(*tls_default_server_domain) < 0)
+	/* initialize tls default domains */
+	init_tls_domains(tls_default_server_domain);
+
+	if (*tls_default_server_domain == NULL) {
+		/* DB default domain failed to init, fallback to standard default domain */
+		if (def_srv_tmp) {
+			init_tls_domains(&tls_def_srv_dom_orig);
+			if (tls_def_srv_dom_orig == NULL)
+				return -1;
+			*tls_default_server_domain = tls_def_srv_dom_orig;
+		} else
+			return -1;
+	}
+
+	init_tls_domains(tls_default_client_domain);
+
+	if (*tls_default_client_domain == NULL) {
+		if (def_cli_tmp) {
+			init_tls_domains(&tls_def_cli_dom_orig);
+			if (tls_def_cli_dom_orig == NULL)
+				return -1;
+			*tls_default_client_domain = tls_def_cli_dom_orig;
+		} else
+			return -1;
+	}
+
+	/* initialize tls virtual domains */
+	if (init_tls_domains(tls_server_domains) < 0)
+		return -1;
+	if (init_tls_domains(tls_client_domains) < 0)
 		return -1;
 
-	if (init_tls_domains(*tls_default_client_domain) < 0)
-		return -1;
-
-	/*
-	 * initialize tls virtual domains
-	 */
-	if (init_tls_domains(*tls_server_domains) < 0)
-		return -1;
-
-	if (init_tls_domains(*tls_client_domains) < 0)
-		return -1;
-
-	/*
-	 * we are all set
-	 */
 	return 0;
 }
 
-/*
- * called from main.c when opensips exits (main process)
- */
+
 static void mod_destroy(void)
 {
 	struct tls_domain *d;

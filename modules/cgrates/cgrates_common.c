@@ -20,6 +20,7 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include "../../dprint.h"
 #include "../../str.h"
 #include "../../async.h"
@@ -149,6 +150,29 @@ int cgrates_set_reply(int type, int_str *value)
 	return 0;
 }
 
+static int cgr_id_index = 0;
+
+int cgr_init_common(void)
+{
+	/*
+	 * the format is 'rand | my_pid'
+	 * rand is (int) - (unsigned short) long
+	 * my_pid is (short) long
+	 */
+	cgr_id_index = my_pid() & USHRT_MAX;
+	cgr_id_index |= rand() << sizeof(unsigned short);
+
+	return 0;
+}
+
+
+static inline int cgr_unique_id(void)
+{
+	cgr_id_index += (1 << sizeof(unsigned short));
+	/* make sure we always return something positive */
+	return cgr_id_index < 0 ? -cgr_id_index : cgr_id_index;
+}
+
 #define JSON_CHECK(_c, _s) \
 	do { \
 		if (!(_c)) { \
@@ -170,6 +194,9 @@ struct cgr_msg *cgr_get_generic_msg(str *method, struct cgr_session *s)
 	JSON_CHECK(cmsg.msg, "new json object");
 	JSON_CHECK(jtmp = json_object_new_string_len(method->s, method->len), "method");
 	json_object_object_add(cmsg.msg,"method", jtmp);
+
+	JSON_CHECK(jtmp = json_object_new_int(cgr_unique_id()), "id");
+	json_object_object_add(cmsg.msg, "id", jtmp);
 
 	JSON_CHECK(jarr = json_object_new_array(), "params array");
 	json_object_object_add(cmsg.msg,"params", jarr);
@@ -517,6 +544,10 @@ try_again:
 	if (bytes_read < 0) {
 		if (errno == EINTR || errno == EAGAIN)
 			goto try_again;
+		else if (errno == ECONNRESET) {
+			LM_INFO("CGRateS engine reset the connection\n");
+			goto disable;
+		}
 		LM_ERR("read() failed with %d(%s)\n from %.*s:%d\n", errno,
 				strerror(errno), e->host.len, e->host.s, e->port);
 		/* close the connection, since we don't know now to parse what's
@@ -682,9 +713,10 @@ int cgrates_process(json_object *jobj,
 		is_reply = 1;
 		if (json_object_get_type(jresult) == json_type_null)
 			jresult = NULL;
-	} else if (json_object_object_get_ex(jobj, "error", &tmp) && tmp) {
+	}
+	if (json_object_object_get_ex(jobj, "error", &jerror) && jerror) {
 		is_reply = 1;
-		if (json_object_get_type(jresult) == json_type_null)
+		if (json_object_get_type(jerror) == json_type_null)
 			jerror = NULL;
 	}
 
@@ -700,7 +732,7 @@ int cgrates_process(json_object *jobj,
 				}
 				break;
 			case json_type_string:
-				if (!jresult) {
+				if (jresult) {
 					LM_ERR("Invalid RPC: both \"error\" and \"result\" are not null: %s\n", rpc);
 					return -3;
 				}

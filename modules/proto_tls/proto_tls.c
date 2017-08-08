@@ -144,6 +144,7 @@ static int trace_filter_route_id = -1;
 
 static int tls_read_req(struct tcp_connection* con, int* bytes_read);
 static int proto_tls_conn_init(struct tcp_connection* c);
+static void proto_tls_conn_clean(struct tcp_connection* c);
 
 static cmd_export_t cmds[] = {
 	{"proto_init", (cmd_function)proto_tls_init, 0, 0, 0, 0},
@@ -270,7 +271,7 @@ static int proto_tls_init(struct proto_info *pi)
 	pi->net.flags			= PROTO_NET_USE_TCP;
 	pi->net.read			= (proto_net_read_f)tls_read_req;
 	pi->net.conn_init		= proto_tls_conn_init;
-	pi->net.conn_clean		= tls_conn_clean;
+	pi->net.conn_clean		= proto_tls_conn_clean;
 	pi->net.report			= tls_report;
 
 	return 0;
@@ -328,6 +329,20 @@ static int proto_tls_conn_init(struct tcp_connection* c)
 out:
 	return tls_conn_init(c, &tls_mgm_api);
 }
+
+
+static void proto_tls_conn_clean(struct tcp_connection* c)
+{
+	struct tls_data *data = (struct tls_data*)c->proto_data;
+
+	if (data) {
+		shm_free(data);
+		c->proto_data = NULL;
+	}
+
+	tls_conn_clean(c);
+}
+
 
 static void tls_report(int type, unsigned long long conn_id, int conn_flags,
 																void *extra)
@@ -446,11 +461,16 @@ static int proto_tls_send(struct socket_info* send_sock,
 	}
 
 send_it:
-	if ( c->proto_flags & F_TLS_TRACE_READY ) {
+	/* if there is pending tracing data on a connection startet by us
+	 * (connected) -> flush it
+	 * As this is a write op, we look only for connected conns, not to conflict
+	 * with accepted conns (flushed on read op) */
+	if ( (c->flags&F_CONN_ACCEPTED)==0 && c->proto_flags & F_TLS_TRACE_READY ) {
 		data = c->proto_data;
 		/* send the message if set from tls_mgm */
 		if ( data->message ) {
 			send_trace_message( data->message, t_dst);
+			data->message = NULL;
 		}
 
 		/* don't allow future traces for this connection */
@@ -512,12 +532,15 @@ static int tls_read_req(struct tcp_connection* con, int* bytes_read)
 	/* do this trick in order to trace whether if it's an error or not */
 	ret=tls_fix_read_conn(con);
 
-	if ( con->proto_flags & F_TLS_TRACE_READY ) {
+	/* if there is pending tracing data on an accepted connection, flush it
+	 * As this is a read op, we look only for accepted conns, not to conflict
+	 * with connected conns (flushed on write op) */
+	if ( con->flags&F_CONN_ACCEPTED && con->proto_flags & F_TLS_TRACE_READY ) {
 		data = con->proto_data;
 		/* send the message if set from tls_mgm */
 		if ( data->message ) {
-			tprot.send_message( data->message, t_dst, 0);
-			tprot.free_message( data->message );
+			send_trace_message( data->message, t_dst);
+			data->message = NULL;
 		}
 
 		/* don't allow future traces for this connection */

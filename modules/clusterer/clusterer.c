@@ -675,6 +675,10 @@ enum clusterer_send_ret cl_send_to(bin_packet_t *packet, int cluster_id, int nod
 	cluster_info_t *cl;
 	int check_call_cbs_event = 0;
 
+	if (!cl_list_lock) {
+		LM_ERR("cluster shutdown - cannot send new messages!\n");
+		return CLUSTERER_CURR_DISABLED;
+	}
 	lock_start_read(cl_list_lock);
 
 	cl = get_cluster_by_id(cluster_id);
@@ -730,6 +734,10 @@ enum clusterer_send_ret cl_send_all(bin_packet_t *packet, int cluster_id)
 	cluster_info_t *cl;
 	int check_call_cbs_event = 0;
 
+	if (!cl_list_lock) {
+		LM_ERR("cluster shutdown - cannot send new messages!\n");
+		return CLUSTERER_CURR_DISABLED;
+	}
 	lock_start_read(cl_list_lock);
 
 	cl = get_cluster_by_id(cluster_id);
@@ -1151,7 +1159,7 @@ static void receive_msg_unknown_source(bin_packet_t *received, cluster_info_t *c
 	str str_vals[NO_DB_STR_VALS];
 	char *char_str_vals[NO_DB_STR_VALS];
 	int int_vals[NO_DB_INT_VALS];
-	node_info_t *new_node;
+	node_info_t *new_node = NULL;
 	int lock_old_flag;
 	bin_packet_t packet;
 
@@ -1228,7 +1236,10 @@ static void receive_msg_unknown_source(bin_packet_t *received, cluster_info_t *c
 
 		lock_switch_write(cl_list_lock, lock_old_flag);
 
-		new_node = add_node_info(&cl, int_vals, char_str_vals);
+		if (add_node_info(&new_node, &cl, int_vals, char_str_vals) < 0) {
+			LM_ERR("Unable to add node info to backing list\n");
+			return;
+		}
 		if (!new_node) {
 			LM_ERR("Unable to add node info to backing list\n");
 			return;

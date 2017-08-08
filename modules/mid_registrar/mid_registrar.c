@@ -269,6 +269,11 @@ static int mod_init(void)
 		return -1;
 	}
 
+	if (ul_api.db_mode != NO_DB) {
+		LM_ERR("the 2.3 mid_registrar only works with usrloc 'db_mode = 0'!\n");
+		return -1;
+	}
+
 	if (load_tm_api(&tm_api) < 0) {
 		LM_ERR("failed to load user location API\n");
 		return -1;
@@ -305,6 +310,11 @@ static int mod_init(void)
 			default_q = MIN_Q;
 		}
 	}
+
+	/*
+	 * Import use_domain parameter from usrloc
+	 */
+	reg_use_domain = ul_api.use_domain;
 
 	if (rcv_avp_param && *rcv_avp_param) {
 		s.s = rcv_avp_param; s.len = strlen(s.s);
@@ -347,7 +357,7 @@ static int mod_init(void)
 		}
 
 		if (ul_api.register_ulcb(
-			UL_CONTACT_INSERT|UL_CONTACT_DELETE|UL_CONTACT_EXPIRE,
+			UL_CONTACT_INSERT|UL_CONTACT_UPDATE|UL_CONTACT_DELETE|UL_CONTACT_EXPIRE,
 			mid_reg_ct_event, &ucontact_data_idx) < 0) {
 			LM_ERR("cannot register usrloc contact callback\n");
 			return -1;
@@ -377,12 +387,12 @@ static int mod_init(void)
 	return 0;
 }
 
-inline void set_ct(struct mid_reg_info *ct)
+void set_ct(struct mid_reg_info *ct)
 {
 	__info = ct;
 }
 
-inline struct mid_reg_info *get_ct(void)
+struct mid_reg_info *get_ct(void)
 {
 	return __info;
 }
@@ -428,7 +438,7 @@ int get_expires_hf(struct sip_msg* _m)
 
 	if (_m->expires) {
 		p = (exp_body_t*)_m->expires->parsed;
-		if (p->valid) {
+		if (p != NULL && p->valid) {
 			if (p->val != 0) {
 				return p->val;
 			} else return 0;

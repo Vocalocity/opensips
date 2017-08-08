@@ -284,11 +284,9 @@ static int child_init(int rank)
 	}
 
 	/* child 1 loads the clusterer DB info */
-	if (rank == 1) {
-		if (load_db_info(&dr_dbf, db_hdl, &db_table, cluster_list) < 0) {
-			LM_ERR("Failed to load info from DB\n");
-			return -1;
-		}
+	if (rank == 1 && load_db_info(&dr_dbf, db_hdl, &db_table, cluster_list) < 0) {
+		LM_ERR("Failed to load info from DB\n");
+		return -1;
 	}
 
 	return 0;
@@ -299,7 +297,7 @@ static struct mi_root* clusterer_reload(struct mi_root* root, void *param)
 	cluster_info_t *new_info;
 	cluster_info_t *old_info;
 
-	if (load_db_info(&dr_dbf, db_hdl, &db_table, &new_info) < 0) {
+	if (load_db_info(&dr_dbf, db_hdl, &db_table, &new_info) != 0) {
 		LM_ERR("Failed to load info from DB\n");
 		return init_mi_tree(500, "Failed to reload", 16);
 	}
@@ -550,11 +548,11 @@ static void destroy(void)
 {
 	struct mod_registration *tmp;
 
-	/* update DB */
-	update_db_current();
-
-	/* close DB connection */
 	if (db_hdl) {
+		/* update DB */
+		update_db_current();
+
+		/* close DB connection */
 		dr_dbf.close(db_hdl);
 		db_hdl = NULL;
 	}
@@ -574,8 +572,10 @@ static void destroy(void)
 	}
 
 	/* destroy lock */
-	if (cl_list_lock)
+	if (cl_list_lock) {
 		lock_destroy_rw(cl_list_lock);
+		cl_list_lock = NULL;
+	}
 }
 
 int load_clusterer(struct clusterer_binds *binds)

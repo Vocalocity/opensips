@@ -67,7 +67,8 @@ static void tcpconn_release(struct tcp_connection* c, long state,int writer)
 	}
 
 	/* release req & signal the parent */
-	c->proc_id = -1;
+	if (!writer)
+		c->proc_id = -1;
 
 	/* errno==EINTR, EWOULDBLOCK a.s.o todo */
 	response[0]=(long)c;
@@ -94,6 +95,7 @@ void tcp_conn_release(struct tcp_connection* c, int pending_data)
 	}
 	if (pending_data) {
 		tcpconn_release(c, ASYNC_WRITE,1);
+		return;
 	}
 	tcpconn_put(c);
 	return;
@@ -168,17 +170,17 @@ again:
 				/* FIXME? */
 				return -1;
 			}
-			if (con==tcp_conn_lst){
-				LM_CRIT("duplicate"
-							" connection received: %p, id %d, fd %d, refcnt %d"
-							" state %d (n=%d)\n", con, con->id, con->fd,
-							con->refcnt, con->state, n);
-				tcpconn_release_error(con, 0,"Internal duplicate");
-				break; /* try to recover */
-			}
 
 			LM_DBG("We have received conn %p with rw %d on fd %d\n",con,rw,s);
 			if (rw & IO_WATCH_READ) {
+				if (tcpconn_list_find(con, tcp_conn_lst)) {
+					LM_CRIT("duplicate connection received: %p, id %d, fd %d, "
+					        "refcnt %d state %d (n=%d)\n", con, con->id,
+					        con->fd, con->refcnt, con->state, n);
+					tcpconn_release_error(con, 0, "Internal duplicate");
+					break; /* try to recover */
+				}
+
 				/* 0 attempts so far for this SIP MSG */
 				con->msg_attempts = 0;
 
@@ -188,6 +190,8 @@ again:
 				 * must be in the list */
 				tcpconn_check_add(con);
 				tcpconn_listadd(tcp_conn_lst, con, c_next, c_prev);
+				/* pending event on a connection -> prevent premature expiry */
+				tcp_conn_set_lifetime(con, tcp_con_lifetime);
 				con->timeout = con->lifetime;
 				if (reactor_add_reader( s, F_TCPCONN, RCT_PRIO_NET, con )<0) {
 					LM_CRIT("failed to add new socket to the fd list\n");

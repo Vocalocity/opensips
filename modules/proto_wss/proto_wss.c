@@ -277,23 +277,26 @@ static int wss_conn_init(struct tcp_connection* c)
 static void ws_conn_clean(struct tcp_connection* c)
 {
 	struct ws_data *d = (struct ws_data*)c->proto_data;
-	if (!d)
-		return;
 
-	if (c->state == S_CONN_OK && !is_tcp_main) {
-		switch (d->code) {
-		case WS_ERR_NOSEND:
-			break;
-		case WS_ERR_NONE:
-			WS_CODE(c) = WS_ERR_NORMAL;
-		default:
-			ws_close(c);
-			break;
+	if (d) {
+
+		if (c->state == S_CONN_OK && !is_tcp_main) {
+			switch (d->code) {
+			case WS_ERR_NOSEND:
+				break;
+			case WS_ERR_NONE:
+				WS_CODE(c) = WS_ERR_NORMAL;
+			default:
+				ws_close(c);
+				break;
+			}
 		}
+
+		shm_free(d);
+		c->proto_data = NULL;
+
 	}
 
-	shm_free(d);
-	c->proto_data = NULL;
 	tls_conn_clean(c);
 }
 
@@ -486,9 +489,10 @@ send_it:
 	/* only here we will have all tracing data TLS + WS */
 	d = c->proto_data;
 
-	if ( d && d->dest && d->tprot ) {
+	if ( (c->flags&F_CONN_ACCEPTED)==0 && d && d->dest && d->tprot ) {
 		if ( d->message ) {
 			send_trace_message( d->message, t_dst);
+			d->message = NULL;
 		}
 
 		/* don't allow future traces for this cnection */
@@ -542,6 +546,7 @@ static int wss_read_req(struct tcp_connection* con, int* bytes_read)
 		if ( (d=con->proto_data) && d->dest && d->tprot ) {
 			if ( d->message ) {
 				send_trace_message( d->message, t_dst);
+				d->message = NULL;
 
 				/* don't allow future traces for this connection */
 				d->tprot = 0;
@@ -565,11 +570,12 @@ static int wss_read_req(struct tcp_connection* con, int* bytes_read)
 		 * but the connection is closed with
 		 * EOF before reaching this code if the certificate is not
 		 * validated by the client */
-		if ( (WS_STATE(con) == WS_CON_HANDSHAKE_DONE ||
-					con->state == S_CONN_EOF ) &&
-								d && d->dest && d->tprot ) {
+		if ( con->flags&F_CONN_ACCEPTED
+		&& (WS_STATE(con)==WS_CON_HANDSHAKE_DONE || con->state==S_CONN_EOF)
+		&& d && d->dest && d->tprot ) {
 			if ( d->message ) {
 				send_trace_message( d->message, t_dst);
+				d->message = NULL;
 			}
 
 			/* don't allow future traces for this connection */

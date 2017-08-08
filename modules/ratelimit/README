@@ -12,23 +12,17 @@ Edited by
 
 Ovidiu Sas
 
-Edited by
-
 Bogdan Vasile Harjoc
-
-Edited by
 
 Hendrik Scholz
 
-Edited by
-
 Razvan Crainea
 
-   Copyright © 2006 Freenet Cityline GmbH
+   Copyright � 2006 Freenet Cityline GmbH
 
-   Copyright © 2008 VoIP Embedded Inc.
+   Copyright � 2008 VoIP Embedded Inc.
 
-   Copyright © 2011 OpenSIPS Foundation
+   Copyright � 2011 OpenSIPS Foundation
    Revision History
    Revision $Revision: 5901 $ $Date$
      __________________________________________________________
@@ -272,9 +266,9 @@ Chapter 1. Admin Guide
 
 1.6.1. timer_interval (integer)
 
-   The initial length of a timer interval in seconds. All amounts
-   of messages have to be divided by this timer to get a messages
-   per second value.
+   The timer interval in seconds when the Network and Feedback
+   algorithms run their queries, and the other algorithms reset
+   their counters.
 
    IMPORTANT: A too small value may lead to performance penalties
    due to timer process overloading.
@@ -427,22 +421,22 @@ modparam("ratelimit", "accept_pipes_timeout", 1)
 
    Authentication check for incoming packets.
 
-   Default value is “0” (disabled).
+   Default value is "0" (disabled).
 
    Example 1.13. Set repl_pipes_auth_check parameter
 ...
-modparam("dialog", "repl_pipes_auth_check", 1)
+modparam("ratelimit", "repl_pipes_auth_check", 1)
 ...
 
 1.6.14. window_size (int)
 
    How long the history in SBT should be in seconds.
 
-   Default value is “10”.
+   Default value is "10".
 
    Example 1.14. Set window_size parameter
 ...
-modparam("dialog", "window_size", 5)
+modparam("ratelimit", "window_size", 5)
 ...
 
 1.6.15. slot_period (int)
@@ -451,13 +445,13 @@ modparam("dialog", "window_size", 5)
    how granular the algorithm should be. The number of slots will
    be determined by window_size/slot_period.
 
-   Default value is “200”.
+   Default value is "200".
 
    Example 1.15. Set slot_period parameter
 ...
-modparam("dialog", "window_size", 5)
+modparam("ratelimit", "window_size", 5)
 #we will have 50 slots of 100 microseconds
-modparam("dialog", "slot_period", 100)
+modparam("ratelimit", "slot_period", 100)
 ...
 
 1.7. Exported Functions

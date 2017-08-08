@@ -1512,6 +1512,11 @@ int add_hep_correlation(trace_message message, char* corr_name, str* corr_value)
 
 	hep_msg = (struct hep_desc*) message;
 
+	if (hep_msg->version < 3) {
+		LM_DBG("Won't add data to HEP proto lower than 3!\n");
+		return 0;
+	}
+
 	if ( !homer5_on ) {
 		if ( hep_msg->correlation) {
 			root = (cJSON *) hep_msg->correlation;
@@ -1560,6 +1565,11 @@ int add_hep_payload(trace_message message, char* pld_name, str* pld_value)
 
 	hep_msg = (struct hep_desc*) message;
 
+	if (hep_msg->version < 3) {
+		LM_DBG("Won't add data to HEP proto lower than 3!\n");
+		return 0;
+	}
+
 	if ( !homer5_on ) {
 		if ( hep_msg->fPayload ) {
 			root = (cJSON *) hep_msg->fPayload;
@@ -1583,7 +1593,7 @@ int add_hep_payload(trace_message message, char* pld_name, str* pld_value)
 			homer5_buf = pkg_malloc( sizeof(str) );
 			if ( !homer5_buf ) {
 				LM_ERR("no more pkg mem!\n");
-				return 0;
+				return -1;
 			}
 
 			homer5_buf->len = 0;
@@ -1593,7 +1603,9 @@ int add_hep_payload(trace_message message, char* pld_name, str* pld_value)
 
 		if ( !homer5_buf->s ) {
 			LM_ERR("no more pkg mem!\n");
-			return 0;
+			if (hep_msg->fPayload==NULL)
+				pkg_free(homer5_buf);
+			return -1;
 		}
 
 		if ( hep_msg->fPayload ) {
@@ -1681,11 +1693,16 @@ void free_hep_message(trace_message message)
 	generic_chunk_t *foo=NULL, *it;
 	struct hep_desc* hep_msg = message;
 
+	if (hep_msg==NULL)
+		return;
+
 	if (hep_msg->version == 3) {
 		/* free custom chunks */
-		for (it=hep_msg->u.hepv3.chunk_list; it; foo=it, it=it->next) {
-			if (foo)
-				pkg_free(foo);
+		it = hep_msg->u.hepv3.chunk_list;
+		while( it ) {
+			foo = it;
+			it = it->next;
+			pkg_free(foo);
 		}
 
 		/* free JSON payload if there */
@@ -1693,7 +1710,8 @@ void free_hep_message(trace_message message)
 			if ( !homer5_on ) {
 				JSON_free( hep_msg->fPayload );
 			} else {
-				pkg_free( ((str *)hep_msg->fPayload)->s );
+				if ( ((str *)hep_msg->fPayload)->s )
+					pkg_free( ((str *)hep_msg->fPayload)->s );
 				pkg_free( hep_msg->fPayload );
 			}
 		}
@@ -1706,9 +1724,6 @@ void free_hep_message(trace_message message)
 				pkg_free( hep_msg->correlation );
 			}
 		}
-
-		if (foo)
-			pkg_free(foo);
 	}
 
 	pkg_free(hep_msg);
