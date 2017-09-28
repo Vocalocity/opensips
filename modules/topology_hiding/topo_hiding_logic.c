@@ -1591,10 +1591,10 @@ static char* build_encoded_contact_suffix(struct sip_msg* msg,int *suffix_len)
 	memcpy(s,th_contact_encode_param.s,th_contact_encode_param.len);
 	s+= th_contact_encode_param.len;
 	*s++ = '=';
-	*s++ = '"';	
+	*s++ = "'";
 	base64encode((unsigned char*)s,(unsigned char *)suffix_plain,p-suffix_plain);
 	s = s+enc_len;
-	*s++ = '"';
+	*s++ = "'";
 	
 	if (th_param_list) {
 		for (el=th_param_list;el;el=el->next) {
