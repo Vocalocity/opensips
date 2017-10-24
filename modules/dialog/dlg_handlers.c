@@ -1013,7 +1013,7 @@ void update_dialog_route (struct sip_msg* req, struct dlg_cell *dlg, unsigned in
 	if ( contact.len != 0 && (contact.len != leg->contact.len || strncmp(contact.s,leg->contact.s,leg->contact.len)) != 0) {
 		LM_DBG("Leg has a new IP, updating contact. Old contact=%.*s, new contact=%.*s\n", leg->contact.len, leg->contact.s, contact.len, contact.s);
         dlg_lock_dlg(dlg);
-		dlg_update_leg_contact(leg, &rr_set, &contact);
+		dlg_update_leg_contact(leg, &contact);
         dlg_unlock_dlg(dlg);
 	}
 }
