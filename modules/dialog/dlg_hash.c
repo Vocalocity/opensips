@@ -196,8 +196,6 @@ static inline void free_dlg_dlg(struct dlg_cell *dlg)
 				shm_free(dlg->legs[i].contact.s);
 			if (dlg->legs[i].route_set.s)
 				shm_free(dlg->legs[i].route_set.s);
-			if (dlg->legs[i].th_sent_contact.s)
-				shm_free(dlg->legs[i].th_sent_contact.s);
 			if (dlg->legs[i].from_uri.s)
 				shm_free(dlg->legs[i].from_uri.s);
 			if (dlg->legs[i].to_uri.s)
@@ -356,6 +354,7 @@ int dlg_add_leg_info(struct dlg_cell *dlg, str* tag, str *rr,
 		str *mangled_from,str *mangled_to)
 {
 	struct dlg_leg* leg,*new_legs;
+	rr_t *head = NULL, *rrp;
 
 	if ( (dlg->legs_no[DLG_LEGS_ALLOCED]-dlg->legs_no[DLG_LEGS_USED])==0) {
 		new_legs = (struct dlg_leg*)shm_realloc(dlg->legs,
@@ -391,13 +390,14 @@ int dlg_add_leg_info(struct dlg_cell *dlg, str* tag, str *rr,
 		}
 	}
 
-    if (dlg_update_leg_contact(leg, rr, contact) == -1){
+    if (dlg_update_leg_contact(leg, contact) == -1){
         shm_free(leg->tag.s);
         shm_free(leg->r_cseq.s);
         shm_free(leg->contact.s);
         return -1;
     }
-			/* rr */
+
+	/* rr */
 	if (rr->len) {
 		leg->route_set.s = shm_malloc(rr->len);
 		if (leg->route_set.s==NULL) {
@@ -440,17 +440,6 @@ int dlg_add_leg_info(struct dlg_cell *dlg, str* tag, str *rr,
 
 		leg->to_uri.len = mangled_to->len;
 		memcpy(leg->to_uri.s,mangled_to->s,mangled_to->len);
-	}
-
-	if (sdp && sdp->s && sdp->len) {
-		leg->sdp.s = shm_malloc(sdp->len);
-		if (!leg->sdp.s) {
-			LM_ERR("no more shm\n");
-			goto error_all;
-		}
-
-		leg->sdp.len = sdp->len;
-		memcpy(leg->sdp.s,sdp->s,sdp->len);
 	}
 
 	/* tag */
