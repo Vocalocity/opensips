@@ -131,8 +131,10 @@ int topology_hiding_match(struct sip_msg *msg)
 	struct sip_uri *r_uri;
 	int i;
 
+	LM_INFO("Royee - In topology_hiding_match");
+
 	if (parse_sip_msg_uri(msg)<0) {
-		LM_ERR("Failed to parse request URI\n");
+		LM_ERR("Royee - Failed to parse request URI\n");
 		return -1;
 	}
 
@@ -145,13 +147,23 @@ int topology_hiding_match(struct sip_msg *msg)
 	if (check_self(&r_uri->host,r_uri->port_no ? r_uri->port_no : SIP_PORT, 0) == 1 && msg->route == NULL) {
 		/* Seems we are in the topo hiding case :
 		 * we are in the R-URI and there are no other route headers */
-		for (i=0;i<r_uri->u_params_no;i++)
+		for (i=0;i<r_uri->u_params_no;i++){
 			if (r_uri->u_name[i].len == th_contact_encode_param.len &&
 				memcmp(th_contact_encode_param.s,r_uri->u_name[i].s,th_contact_encode_param.len)==0) {
-				LM_DBG("We found param in R-URI with value of %.*s\n",
-					r_uri->u_val[i].len,r_uri->u_val[i].s);
+				LM_INFO("Royee - We found param in R-URI with value of %.*s\n",
+						r_uri->u_val[i].len, r_uri->u_val[i].s);
 				/* pass the param value to the matching funcs */
-				return topo_no_dlg_seq_handling(msg,&r_uri->u_val[i]);
+				return topo_no_dlg_seq_handling(msg, &r_uri->u_val[i]);
+			}
+			else{
+				LM_INFO("Royee - No fitting in R-URI with value of %.*s\n",
+						r_uri->u_val[i].len, r_uri->u_val[i].s);
+				LM_INFO("Royee - No fitting in u_params with value of %.*s\n",
+						r_uri->u_name[i].len, r_uri->u_name[i].s);
+				LM_INFO("Royee - No fitting in contact with value of %.*s\n",
+						th_contact_encode_param.len, th_contact_encode_param.s);
+
+			}
 		}
 	}
 
